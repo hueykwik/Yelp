@@ -41,58 +41,70 @@ names(latino_names) = "name"
 
 ## Get Mexican restaurants
 Get Mexican restaurants with the most reviews. 
-```{r}
+```{r top Mexican restaurants}
 mexican = businesses %>% filter(grepl('Mexican', categories)) %>% filter(grepl('Restaurants', categories)) %>% arrange(desc(review_count))
-
-restaurants = mexican[1,]
-restaurants$review_count
 ```
 
-## Looking at the top restaurant, Tacos El Gordo
-Get the reviews for these restaurants
-```{r join reviews and restaurants}
+## Test on all of them
+```{r more restaurants}
+num_restaurants = 2515
+restaurants = mexican[1:num_restaurants,]
 restaurant_reviews = inner_join(restaurants, reviews, by = "business_id")
-dim(restaurant_reviews)
-```
-
-Get the user names associated with these reviews
-```{r}
 restaurant_reviews_users = inner_join(restaurant_reviews, users, by = "user_id")
-dim(restaurant_reviews_users)  
 ```
 
-Bucket into Latino and non-Latino
-```{r}
-latino_reviews = semi_join(restaurant_reviews_users, latino_names, c("name.y" = "name"))
-non_latino_reviews = anti_join(restaurant_reviews_users, latino_names, c("name.y" = "name"))
+t-test the differences
+```{r t-test many}
+p_value_cutoff = 0.05 / num_restaurants
+
+restaurant_names = c()
+latino_ratings = c()
+non_latino_ratings = c()
+num_latino_reviews = c()
+num_non_latino_reviews = c()
+
+for (id in restaurants$business_id) {
+  subset = filter(restaurant_reviews_users, business_id == id)
+  latino_reviews = semi_join(subset, latino_names, c("name.y" = "name"))
+  non_latino_reviews = anti_join(subset, latino_names, c("name.y" = "name"))
+  
+  if (length(latino_reviews$stars.y) <= 1 || length(non_latino_reviews$stars.y) <= 1) next  # Prevent errors to t-test
+  
+  try({
+    alt = "two.sided"
+    latino_mean = mean(latino_reviews$stars.y)
+    non_latino_mean = mean(non_latino_reviews$stars.y)
+    if (latino_mean < non_latino_mean) {
+      alt = "less"
+    }
+    if (latino_mean > non_latino_mean) {
+      alt = "greater"
+    }
+    #print(length(latino_reviews$stars.y))
+    res = t.test(latino_reviews$stars.y, non_latino_reviews$stars.y, alternative = alt)
+    if (res$p.value < p_value_cutoff) {
+      restaurant_names = c(restaurant_names, subset$name.x[1])
+      latino_ratings = c(latino_ratings, latino_mean)
+      non_latino_ratings = c(non_latino_ratings, non_latino_mean)
+      num_latino_reviews = c(num_latino_reviews, nrow(latino_reviews))
+      num_non_latino_reviews = c(num_non_latino_reviews, nrow(non_latino_reviews))
+    }
+  }
+  )
+}
+restaurants_sig = data.frame(restaurant_names, latino_ratings, non_latino_ratings, num_latino_reviews, num_non_latino_reviews)
 ```
 
-Compare distribution of review scores
-```{r}
-summary(latino_reviews$stars.y)
-summary(non_latino_reviews$stars.y)
-```
-It seems like the mean of latino reviews is lower, 4.212 to 4.322.
-
-Plot them:
-```{r}
-stars = c(latino_reviews$stars.y, non_latino_reviews$stars.y)
-latin = c(rep("Latin", length(latino_reviews$stars.y)), rep("Non-Latin", length(non_latino_reviews$stars.y)))
-reviews_latin_or_non = data.frame(stars, latin)
-
-ggplot(reviews_latin_or_non, aes(x = stars)) + geom_bar() + facet_wrap(~latin)
+## Results
+The following table shows the restaurants where latino ratings and non-latino ratings
+had statistically significant differences:
+```{r latino data frame}
+restaurants_sig
 ```
 
-It's actually hard to tell if there's a difference, since there are way more
-reviews classified as non-Latin.
+For all of these, the sample size of Latino reviews is really small. It seems that
+building a "racist Yelp" for Mexican restaurants would not be all that useful.
 
-t-test
-```{r}
-t.test(latino_reviews$stars.y, non_latino_reviews$stars.y)
-t.test(latino_reviews$stars.y, non_latino_reviews$stars.y, alternative = "less")
-```
-Not statistically significant.
-
-## List of Questions
-Is there a Chipotle in this dataset? It would be interesting to see if there
-are differences.
+## Other Questions
+- Is Chipotle more of a lightning rod between Latinos and non-Latinos? 
+-- The only time it came up statistically signficant was for two locations, but the number of Latino reviews were small
