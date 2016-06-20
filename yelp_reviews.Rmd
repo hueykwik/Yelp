@@ -9,29 +9,90 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(readr)
 library(dplyr)
+library(ggplot2)
+library(stringi)
+
+setwd("~/code/yelp")
 ```
+
+Hypotheses:
+
+* Latinos are more critical of Mexican restaurants than non-Latinos.
+* Latinos will like more authentic Mexican restaurants than non-Latinos.
 
 ## Load businesses
 First, let's load the Yelp businesses. I used the JSON to CSV converter in https://github.com/Yelp/dataset-examples to make it easier for me to load.
 
 ```{r load data}
-reviews = read_csv("data/yelp_academic_dataset_review.csv")
 businesses = read_csv("data/yelp_academic_dataset_business.csv")
+reviews = read_csv("data/yelp_academic_dataset_review.csv")
+users = read_csv("data/yelp_academic_dataset_user.csv")
+
+latino_names = read.csv("popular_names_latino.csv", 
+                        encoding = "latin1", stringsAsFactors = FALSE)
+latino_names$Male.Name = stri_trans_general(latino_names$Male.Name, 
+                                            'latin-ascii')
+latino_names$Female.Name = stri_trans_general(latino_names$Female.Name, 
+                                              'latin-ascii')
+
+latino_names = as.data.frame(c(latino_names$Male.Name, latino_names$Female.Name), stringsAsFactors = FALSE)
+names(latino_names) = "name"
 ```
 
 ## Get Mexican restaurants
-Get Mexican restaurants with the most reviews
+Get Mexican restaurants with the most reviews. 
 ```{r}
-reviews %>% filter(categories )
+mexican = businesses %>% filter(grepl('Mexican', categories)) %>% filter(grepl('Restaurants', categories)) %>% arrange(desc(review_count))
+
+restaurants = mexican[1,]
+restaurants$review_count
 ```
 
-
-## Including Plots
-
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+## Looking at the top restaurant, Tacos El Gordo
+Get the reviews for these restaurants
+```{r join reviews and restaurants}
+restaurant_reviews = inner_join(restaurants, reviews, by = "business_id")
+dim(restaurant_reviews)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+Get the user names associated with these reviews
+```{r}
+restaurant_reviews_users = inner_join(restaurant_reviews, users, by = "user_id")
+dim(restaurant_reviews_users)  
+```
+
+Bucket into Latino and non-Latino
+```{r}
+latino_reviews = semi_join(restaurant_reviews_users, latino_names, c("name.y" = "name"))
+non_latino_reviews = anti_join(restaurant_reviews_users, latino_names, c("name.y" = "name"))
+```
+
+Compare distribution of review scores
+```{r}
+summary(latino_reviews$stars.y)
+summary(non_latino_reviews$stars.y)
+```
+It seems like the mean of latino reviews is lower, 4.212 to 4.322.
+
+Plot them:
+```{r}
+stars = c(latino_reviews$stars.y, non_latino_reviews$stars.y)
+latin = c(rep("Latin", length(latino_reviews$stars.y)), rep("Non-Latin", length(non_latino_reviews$stars.y)))
+reviews_latin_or_non = data.frame(stars, latin)
+
+ggplot(reviews_latin_or_non, aes(x = stars)) + geom_bar() + facet_wrap(~latin)
+```
+
+It's actually hard to tell if there's a difference, since there are way more
+reviews classified as non-Latin.
+
+t-test
+```{r}
+t.test(latino_reviews$stars.y, non_latino_reviews$stars.y)
+t.test(latino_reviews$stars.y, non_latino_reviews$stars.y, alternative = "less")
+```
+Not statistically significant.
+
+## List of Questions
+Is there a Chipotle in this dataset? It would be interesting to see if there
+are differences.
