@@ -1,0 +1,37 @@
+---
+title: "yelp_reviews"
+author: "Huey"
+date: "June 20, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(dplyr)
+```
+
+## Load businesses
+First, let's load the Yelp businesses. I used the JSON to CSV converter in https://github.com/Yelp/dataset-examples to make it easier for me to load.
+
+```{r load data}
+reviews = read_csv("data/yelp_academic_dataset_review.csv")
+businesses = read_csv("data/yelp_academic_dataset_business.csv")
+```
+
+## Get Mexican restaurants
+Get Mexican restaurants with the most reviews
+```{r}
+reviews %>% filter(categories )
+```
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
