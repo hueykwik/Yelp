@@ -143,21 +143,35 @@ latino_names$Female.Name = stri_trans_general(latino_names$Female.Name,
                                               'latin-ascii')
 
 latino_names = as.data.frame(c(latino_names$Male.Name, latino_names$Female.Name), stringsAsFactors = FALSE)
-names(latino_names) = &quot;name&quot;</code></pre>
+names(latino_names) = &quot;name&quot;
+
+latino_names_exclude = read.csv(&quot;popular_names_latino_exclude.csv&quot;, stringsAsFactors = FALSE)
+
+latino_names = anti_join(latino_names, latino_names_exclude, by = &quot;name&quot;)</code></pre>
+<p>When classifying ethnicity, it’s good to get a rough sense of how many users were classified as Latino or not:</p>
+<pre class="r"><code>latino_users = semi_join(users, latino_names)</code></pre>
+<pre><code>## Joining by: &quot;name&quot;</code></pre>
+<pre class="r"><code>non_latino_users = anti_join(users, latino_names)</code></pre>
+<pre><code>## Joining by: &quot;name&quot;</code></pre>
+<pre class="r"><code>print(paste(&quot;Latino:&quot;, nrow(latino_users)))</code></pre>
+<pre><code>## [1] &quot;Latino: 14690&quot;</code></pre>
+<pre class="r"><code>print(paste(&quot;Non-Latino:&quot; , nrow(non_latino_users)))</code></pre>
+<pre><code>## [1] &quot;Non-Latino: 537649&quot;</code></pre>
+<p>Less than 3% of users in the dataset have been classified as Latino.</p>
 </div>
-<div id="get-mexican-restaurants" class="section level2">
-<h2>Get Mexican restaurants</h2>
+<div id="mexican-restaurants" class="section level1">
+<h1>Mexican Restaurants</h1>
 <p>Get Mexican restaurants with the most reviews.</p>
 <pre class="r"><code>mexican = businesses %&gt;% filter(grepl('Mexican', categories)) %&gt;% filter(grepl('Restaurants', categories)) %&gt;% arrange(desc(review_count))</code></pre>
-</div>
-<div id="test-on-all-of-them" class="section level2">
-<h2>Test on all of them</h2>
-<pre class="r"><code>num_restaurants = 2515
+<div id="test-on-the-top-100" class="section level2">
+<h2>Test on the Top 100</h2>
+<pre class="r"><code>num_restaurants = 100
 restaurants = mexican[1:num_restaurants,]
 restaurant_reviews = inner_join(restaurants, reviews, by = &quot;business_id&quot;)
 restaurant_reviews_users = inner_join(restaurant_reviews, users, by = &quot;user_id&quot;)</code></pre>
 <p>t-test the differences</p>
-<pre class="r"><code>p_value_cutoff = 0.05 / num_restaurants
+<pre class="r"><code>#p_value_cutoff = 1
+p_value_cutoff = 0.05 / num_restaurants
 
 restaurant_names = c()
 latino_ratings = c()
@@ -182,7 +196,6 @@ for (id in restaurants$business_id) {
     if (latino_mean &gt; non_latino_mean) {
       alt = &quot;greater&quot;
     }
-    #print(length(latino_reviews$stars.y))
     res = t.test(latino_reviews$stars.y, non_latino_reviews$stars.y, alternative = alt)
     if (res$p.value &lt; p_value_cutoff) {
       restaurant_names = c(restaurant_names, subset$name.x[1])
@@ -200,57 +213,31 @@ restaurants_sig = data.frame(restaurant_names, latino_ratings, non_latino_rating
 <h2>Results</h2>
 <p>The following table shows the restaurants where latino ratings and non-latino ratings had statistically significant differences:</p>
 <pre class="r"><code>restaurants_sig</code></pre>
-<pre><code>##                    restaurant_names latino_ratings non_latino_ratings
-## 1         Sammy's Beach Bar &amp; Grill       1.111111           2.102273
-## 2                      Tacos N More       5.000000           3.521739
-## 3          El Panzon Tacos Y Tortas       5.000000           4.140351
-## 4                           Rubio's       3.000000           3.979167
-## 5  Restaurants Atoyac Estilo Oaxaca       5.000000           4.186047
-## 6       Texicali Taco &amp; Tequila Bar       1.000000           2.238095
-## 7         Salazar Bros Mexican Food       5.000000           4.128205
-## 8                       Cafe Zamora       5.000000           3.526316
-## 9            Chipotle Mexican Grill       5.000000           3.636364
-## 10                    El Pollo Loco       1.000000           3.000000
-## 11           Chipotle Mexican Grill       1.000000           3.344828
-## 12           Los Betos Mexican Food       5.000000           3.538462
-## 13                        Maki Taco       1.000000           3.269231
-## 14                       Quesadilla       1.000000           2.500000
-## 15          Trailer Park Restaurant       5.000000           3.208333
-## 16              Roberto's Taco Shop       1.000000           3.000000
-## 17              Roberto's Taco Shop       5.000000           3.142857
-## 18          El Patron Mexican Grill       1.000000           3.562500
-## 19     La Paz Cantina &amp; Restaurante       4.000000           2.238095
-## 20         Filiberto's Mexican Food       1.000000           3.705882
-## 21                          Rubio's       5.000000           3.588235
-##    num_latino_reviews num_non_latino_reviews
-## 1                   9                     88
-## 2                   3                     69
-## 3                   3                     57
-## 4                   2                     48
-## 5                   4                     43
-## 6                   5                     42
-## 7                   5                     39
-## 8                   3                     38
-## 9                   5                     33
-## 10                  2                     34
-## 11                  3                     29
-## 12                  2                     26
-## 13                  2                     26
-## 14                  2                     26
-## 15                  2                     24
-## 16                  2                     18
-## 17                  2                     21
-## 18                  2                     16
-## 19                  2                     21
-## 20                  2                     17
-## 21                  3                     17</code></pre>
+<pre><code>##                 restaurant_names latino_ratings non_latino_ratings
+## 1                       Javier's         4.5625           3.811508
+## 2 Vida Mexican Kitchen y Cantina         4.0000           3.421053
+## 3          Diego Mexican Cuisine         5.0000           3.470852
+## 4                    Two Hippies         5.0000           3.733607
+##   num_latino_reviews num_non_latino_reviews
+## 1                 16                    504
+## 2                  3                    266
+## 3                  4                    223
+## 4                  2                    244</code></pre>
 <p>For all of these, the sample size of Latino reviews is really small. It seems that building a “racist Yelp” for Mexican restaurants would not be all that useful.</p>
 </div>
+</div>
+<div id="chinese-restaurants" class="section level1">
+<h1>Chinese Restaurants</h1>
+<pre class="r"><code>chinese = businesses %&gt;% filter(grepl('Chinese', categories)) %&gt;% filter(grepl('Restaurants', categories)) %&gt;% arrange(desc(review_count))
+restaurants = chinese[1,]
+restaurant_reviews = inner_join(restaurants, reviews, by = &quot;business_id&quot;)
+restaurant_reviews_users = inner_join(restaurant_reviews, users, by = &quot;user_id&quot;)</code></pre>
 <div id="other-questions" class="section level2">
 <h2>Other Questions</h2>
 <ul>
 <li>Is Chipotle more of a lightning rod between Latinos and non-Latinos? – The only time it came up statistically signficant was for two locations, but the number of Latino reviews were small</li>
 </ul>
+</div>
 </div>
 
 

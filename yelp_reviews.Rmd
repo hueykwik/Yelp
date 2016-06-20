@@ -37,17 +37,35 @@ latino_names$Female.Name = stri_trans_general(latino_names$Female.Name,
 
 latino_names = as.data.frame(c(latino_names$Male.Name, latino_names$Female.Name), stringsAsFactors = FALSE)
 names(latino_names) = "name"
+
+latino_names_exclude = read.csv("popular_names_latino_exclude.csv", stringsAsFactors = FALSE)
+
+latino_names = anti_join(latino_names, latino_names_exclude, by = "name")
+
 ```
 
-## Get Mexican restaurants
+When classifying ethnicity, it's good to get a rough sense of how many users were
+classified as Latino or not:
+
+```{r latino users}
+latino_users = semi_join(users, latino_names)
+non_latino_users = anti_join(users, latino_names)
+
+print(paste("Latino:", nrow(latino_users)))
+print(paste("Non-Latino:" , nrow(non_latino_users)))
+```
+
+Less than 3% of users in the dataset have been classified as Latino.
+
+# Mexican Restaurants
 Get Mexican restaurants with the most reviews. 
 ```{r top Mexican restaurants}
 mexican = businesses %>% filter(grepl('Mexican', categories)) %>% filter(grepl('Restaurants', categories)) %>% arrange(desc(review_count))
 ```
 
-## Test on all of them
+## Test on the Top 100
 ```{r more restaurants}
-num_restaurants = 2515
+num_restaurants = 100
 restaurants = mexican[1:num_restaurants,]
 restaurant_reviews = inner_join(restaurants, reviews, by = "business_id")
 restaurant_reviews_users = inner_join(restaurant_reviews, users, by = "user_id")
@@ -55,6 +73,7 @@ restaurant_reviews_users = inner_join(restaurant_reviews, users, by = "user_id")
 
 t-test the differences
 ```{r t-test many}
+#p_value_cutoff = 1
 p_value_cutoff = 0.05 / num_restaurants
 
 restaurant_names = c()
@@ -80,7 +99,6 @@ for (id in restaurants$business_id) {
     if (latino_mean > non_latino_mean) {
       alt = "greater"
     }
-    #print(length(latino_reviews$stars.y))
     res = t.test(latino_reviews$stars.y, non_latino_reviews$stars.y, alternative = alt)
     if (res$p.value < p_value_cutoff) {
       restaurant_names = c(restaurant_names, subset$name.x[1])
@@ -104,6 +122,14 @@ restaurants_sig
 
 For all of these, the sample size of Latino reviews is really small. It seems that
 building a "racist Yelp" for Mexican restaurants would not be all that useful.
+
+# Chinese Restaurants
+```{r chinese restaurants}
+chinese = businesses %>% filter(grepl('Chinese', categories)) %>% filter(grepl('Restaurants', categories)) %>% arrange(desc(review_count))
+restaurants = chinese[1,]
+restaurant_reviews = inner_join(restaurants, reviews, by = "business_id")
+restaurant_reviews_users = inner_join(restaurant_reviews, users, by = "user_id")
+```
 
 ## Other Questions
 - Is Chipotle more of a lightning rod between Latinos and non-Latinos? 
