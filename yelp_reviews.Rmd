@@ -15,12 +15,18 @@ library(stringi)
 setwd("~/code/yelp")
 ```
 
-Hypotheses:
+# Introduction 
+Are there differences in rating ethnic restaurants between people who are of
+that ethnicity vs. not? For example, do Asians rate Asian restaurants differently
+than non-Asians?
 
-* Latinos are more critical of Mexican restaurants than non-Latinos.
-* Latinos will like more authentic Mexican restaurants than non-Latinos.
+In this exploration, we look at Mexican restaurants and Chinese restaurants and
+try to see if there are any differences. 
 
 ## Load businesses
+The Yelp data contains 2.2M reviews and 591K tips by 552K users for 77K businesses.
+The cities included are Edinburgh (UK), Karlsruhe (Germany), Montreal and Waterloo (Canada),
+and Pittsburgh, Charlotte, Urbana-Champaign, Phoenix, Las Vegas, Madison (US).
 First, let's load the Yelp businesses. I used the JSON to CSV converter in https://github.com/Yelp/dataset-examples to make it easier for me to load.
 
 ```{r load data}
@@ -29,32 +35,31 @@ reviews = read_csv("data/yelp_academic_dataset_review.csv")
 users = read_csv("data/yelp_academic_dataset_user.csv")
 users$name = tolower(users$name)
 
-latino_names = read.csv("popular_names_latino.csv", 
+latino.names = read.csv("popular_names_latino.csv", 
                         encoding = "latin1", stringsAsFactors = FALSE)
-latino_names$Male.Name = stri_trans_general(latino_names$Male.Name, 
+latino.names$Male.Name = stri_trans_general(latino.names$Male.Name, 
                                             'latin-ascii')
-latino_names$Female.Name = stri_trans_general(latino_names$Female.Name, 
+latino.names$Female.Name = stri_trans_general(latino.names$Female.Name, 
                                               'latin-ascii')
 
-latino_names = as.data.frame(c(latino_names$Male.Name, latino_names$Female.Name), stringsAsFactors = FALSE)
-names(latino_names) = "name"
+latino.names = as.data.frame(c(latino.names$Male.Name, latino.names$Female.Name), stringsAsFactors = FALSE)
+names(latino.names) = "name"
 
-latino_names_exclude = read.csv("popular_names_latino_exclude.csv", stringsAsFactors = FALSE)
+latino.names.exclude = read.csv("popular_names_latino_exclude.csv", stringsAsFactors = FALSE)
 
-latino_names = anti_join(latino_names, latino_names_exclude, by = "name")
-latino_names$name = tolower(latino_names$name)
-
+latino.names = anti_join(latino.names, latino.names.exclude, by = "name")
+latino.names$name = tolower(latino.names$name)
 ```
 
 When classifying ethnicity, it's good to get a rough sense of how many users were
 classified as Latino or not:
 
 ```{r latino users}
-latino_users = semi_join(users, latino_names)
-non_latino_users = anti_join(users, latino_names)
+latino.users = semi_join(users, latino.names, by = "name")
+non.latino.users = anti_join(users, latino.names, by = "name")
 
-print(paste("Latino:", nrow(latino_users)))
-print(paste("Non-Latino:" , nrow(non_latino_users)))
+print(paste("Latino:", nrow(latino.users)))
+print(paste("Non-Latino:" , nrow(non.latino.users)))
 ```
 
 Less than 3% of users in the dataset have been classified as Latino.
@@ -65,76 +70,75 @@ t-test applying the Bonferroni correction to find which differences are
 statistically significant. 
 
 ```{r utility function}
-get_restaurants_with_diff_ratings = function(ethnicity, n_restaurants, eth_names) {
-  eth_restaurants = businesses %>% filter(grepl(ethnicity, categories)) %>% filter(grepl('Restaurants', categories)) %>% arrange(desc(review_count))
-  restaurants = eth_restaurants[1:n_restaurants, ]
-  restaurant_reviews = inner_join(restaurants, reviews, by = "business_id")
-  restaurant_reviews_users = inner_join(restaurant_reviews, users, by = "user_id")
+GetRestaurantsWithDiffRatings = function(ethnicity, n.restaurants, eth.names) {
+  eth.restaurants = businesses %>% filter(grepl(ethnicity, categories)) %>% filter(grepl('Restaurants', categories)) %>% arrange(desc(review_count))
+  restaurants = eth.restaurants[1:n.restaurants, ]
+  restaurant.reviews = inner_join(restaurants, reviews, by = "business_id")
+  restaurant.reviews.users = inner_join(restaurant.reviews, users, by = "user_id")
   
-  p_value_cutoff = 0.05 / n_restaurants
+  p.value.cutoff = 0.05 / n.restaurants
 
   restaurant_names = c()
-  eth_ratings = c()
-  non_eth_ratings = c()
-  num_eth_reviews = c()
-  num_non_eth_reviews = c()
+  eth.ratings = c()
+  non.eth.ratings = c()
+  num.eth.reviews = c()
+  num.non.eth.reviews = c()
 
   for (id in restaurants$business_id) {
-    subset = filter(restaurant_reviews_users, business_id == id)
-    eth_reviews = semi_join(subset, eth_names, c("name.y" = "name"))
-    non_eth_reviews = anti_join(subset, eth_names, c("name.y" = "name"))
+    subset = filter(restaurant.reviews.users, business_id == id)
+    eth.reviews = semi_join(subset, eth.names, c("name.y" = "name"))
+    non.eth.reviews = anti_join(subset, eth.names, c("name.y" = "name"))
     
-    if (length(eth_reviews$stars.y) <= 1 || length(non_eth_reviews$stars.y) <= 1) next  # Prevent errors to t-test
+    if (length(eth.reviews$stars.y) <= 1 || length(non.eth.reviews$stars.y) <= 1) next  # Prevent errors to t-test
     
     try({
       alt = "two.sided"
-      eth_mean = mean(eth_reviews$stars.y)
-      non_eth_mean = mean(non_eth_reviews$stars.y)
-      if (eth_mean < non_eth_mean) {
+      eth.mean = mean(eth.reviews$stars.y)
+      non.eth.mean = mean(non.eth.reviews$stars.y)
+      if (eth.mean < non.eth.mean) {
         alt = "less"
       }
-      if (eth_mean > non_eth_mean) {
+      if (eth.mean > non.eth.mean) {
         alt = "greater"
       }
-      res = t.test(eth_reviews$stars.y, non_eth_reviews$stars.y, alternative = alt)
-      if (res$p.value < p_value_cutoff) {
+      res = t.test(eth.reviews$stars.y, non.eth.reviews$stars.y, alternative = alt)
+      if (res$p.value < p.value.cutoff) {
         restaurant_names = c(restaurant_names, subset$name.x[1])
-        eth_ratings = c(eth_ratings, eth_mean)
-        non_eth_ratings = c(non_eth_ratings, non_eth_mean)
-        num_eth_reviews = c(num_eth_reviews, nrow(eth_reviews))
-        num_non_eth_reviews = c(num_non_eth_reviews, nrow(non_eth_reviews))
+        eth.ratings = c(eth.ratings, eth.mean)
+        non.eth.ratings = c(non.eth.ratings, non.eth.mean)
+        num.eth.reviews = c(num.eth.reviews, nrow(eth.reviews))
+        num.non.eth.reviews = c(num.non.eth.reviews, nrow(non.eth.reviews))
       }
     }
     )
   }
-  restaurants_sig = data.frame(restaurant_names, eth_ratings, non_eth_ratings, num_eth_reviews, num_non_eth_reviews)
+  return(data.frame(restaurant_names, eth.ratings, non.eth.ratings, num.eth.reviews, num.non.eth.reviews))
 }
 ```
 
-# Mexican Restaurants
+## Mexican Restaurants
 The following table shows the restaurants where Latino ratings and non-Latino ratings
 had statistically significant differences:
 
 ```{r latino data frame}
-results = get_restaurants_with_diff_ratings('Mexican', 100, latino_names)
+results = GetRestaurantsWithDiffRatings('Mexican', 100, latino.names)
 results
 ```
 
 For all of these, the sample size of Latino reviews is really small. It seems that
 building a "racist Yelp" for Mexican restaurants would not be all that useful.
 
-# Chinese Restaurants
+## Chinese Restaurants
 To get Chinese-sounding names, we will compile a list of all pinyin sounds and
-see if they exist in any first names. This runs in quadratic time so it is fairly
-slow.
+see if they exist in any first names. Unfortunately, this runs in quadratic time.
 
 ```{r chinese users}
 
 load(file = "chinese_users.RData")
 
-if (is.null(chinese_users)) {
+if (is.null(chinese.users)) {
   pinyin = read.csv("pinyin_sounds.csv", stringsAsFactors = FALSE)
-  pinyin_pattern = paste(pinyin$sound, collapse ="|")
+  pinyin.pattern = paste(pinyin$sound, collapse ="|")
   
   exclude = "benji|ique|cque|arjun|axi|lexi|xine|jinx|quant|change|strong|cruise|chunky|suite|burgh fan|tx fan|eping|pping|lping"
   
@@ -143,22 +147,24 @@ if (is.null(chinese_users)) {
   for (i in 1:nrow(users)) {
     if (length(grep(exclude, users$name[i])) > 0) next
     
-    matches = grep(pinyin_pattern, users$name[i])
+    matches = grep(pinyin.pattern, users$name[i])
     indexes[i] = length(matches) > 0
   }
   tictoc::toc()
-  chinese_users = users[indexes,]
-  nrow(chinese_users)
+  chinese.users = users[indexes,]
+  nrow(chinese.users)
   
-  # save chinese_users in case it takes a long time
-  save(chinese_users, file = "chinese_users.RData")
+  # save chinese.users in case it takes a long time
+  save(chinese.users, file = "chinese_users.RData")
 }
 
-chinese_names = as.data.frame(unique(chinese_users$name), stringsAsFactors = FALSE)
-names(chinese_names) = "name"
-results = get_restaurants_with_diff_ratings('Chinese', 100, chinese_names)
+chinese.names = as.data.frame(unique(chinese.users$name), stringsAsFactors = FALSE)
+names(chinese.names) = "name"
+results = GetRestaurantsWithDiffRatings('Chinese', 100, chinese.names)
 results
 ```
+
+
 
 There are 7755 users classified as Chinese, or about 1.4% of the user population.
 Per Wikipedia, Americans of Chinese descent consititute 1.2% of the total U.S.
@@ -169,15 +175,15 @@ popuplation as of 2010.
 An alternative is to use the baby names from the following site:
 http://www.top-100-baby-names-search.com/chinese-name-meanings.html
 ```{r chinese users take 2}
-chinese_names2 = read.csv("top_100_baby_names_chinese.csv", stringsAsFactors = FALSE)
-chinese_names2$name = tolower(chinese_names2$name)
+chinese.names2 = read.csv("top_100_baby_names_chinese.csv", stringsAsFactors = FALSE)
+chinese.names2$name = tolower(chinese.names2$name)
 
-chinese_names2 = chinese_names2[-124,]  # remove "juan"
+chinese.names2 = chinese.names2[-124,]  # remove "juan"
 
-chinese_users2 = semi_join(users, chinese_names2)
-nrow(chinese_users2)
+chinese.users2 = semi_join(users, chinese.names2, by = "name")
+nrow(chinese.users2)
 
-results = get_restaurants_with_diff_ratings('Chinese', 100, chinese_names2)
+results = GetRestaurantsWithDiffRatings('Chinese', 100, chinese.names2)
 results
 ```
 
@@ -190,32 +196,146 @@ What if we expand our search to Korean + Japanese + Chinese? Here we just use th
 baby names list for Chinese names.
 
 ```{r}
-korean_names = read.csv("top_100_baby_names_korean.csv", stringsAsFactors = FALSE)
-korean_names$name = tolower(korean_names$name)
+korean.names = read.csv("top_100_baby_names_korean.csv", stringsAsFactors = FALSE)
+korean.names$name = tolower(korean.names$name)
 
-japanese_names = read.csv("top_100_baby_names_japanese.csv", stringsAsFactors = FALSE)
-japanese_names$name = tolower(japanese_names$name)
+japanese.names = read.csv("top_100_baby_names_japanese.csv", stringsAsFactors = FALSE)
+japanese.names$name = tolower(japanese.names$name)
 
-korean_users = semi_join(users, korean_names)
-japanese_users = semi_join(users, japanese_names)
+korean.users = semi_join(users, korean.names, by = "name")
+japanese.users = semi_join(users, japanese.names, by = "name")
 
-east_asian_names = as.data.frame(c(chinese_names2$name, japanese_names$name, korean_names$name), stringsAsFactors = FALSE)
-names(east_asian_names) = c("name")
-east_asian_users = semi_join(users, east_asian_names)
+east.asian.names = as.data.frame(c(chinese.names2$name, japanese.names$name, korean.names$name), stringsAsFactors = FALSE)
+names(east.asian.names) = c("name")
+east.asian.users = semi_join(users, east.asian.names, by = "name")
 
-results = get_restaurants_with_diff_ratings('Chinese|Korean|Japanese', 100, east_asian_names)
+results = GetRestaurantsWithDiffRatings('Chinese|Korean|Japanese', 100, east.asian.names)
 results
 ```
 
 # East Asian Users using pinyin for Chinese names
 ```{r east asian restaurants}
-east_asian_names = as.data.frame(c(chinese_names$name, japanese_names$name, korean_names$name), stringsAsFactors = FALSE)
-names(east_asian_names) = c("name")
-east_asian_users = semi_join(users, east_asian_names)
+east.asian.names = as.data.frame(c(chinese.names$name, japanese.names$name, korean.names$name), stringsAsFactors = FALSE)
+names(east.asian.names) = c("name")
+east.asian.users = semi_join(users, east.asian.names)
 
-results = get_restaurants_with_diff_ratings('Chinese|Korean|Japanese', 100, east_asian_names)
+results = GetRestaurantsWithDiffRatings('Chinese|Korean|Japanese', 100, east.asian.names)
 results
 ```
 
 Slightly higher rating (4.87 vs 4.67) for Gangnam Asian BBQ Dining from East Asians
 than others in the data set.
+
+# Conclusion
+You can't construct a good "racist Yelp" from the data provided. If we had access
+to last names, we might be able to include Asians or Latinos with Western first names,
+which may change the results. 
+
+## Restaurant preferences
+What kind of restaurants do Latinos review?
+What kind of restaurants do Asians review?
+
+what's the distribution of review count on yelp?
+```{r distribution of review count}
+bw = function(x) diff(range(x)) / (2 * IQR(x) / length(x)^(1/3))
+restaurants = businesses %>% filter(grepl('Restaurants', categories)) %>% arrange(desc(review_count))
+ggplot(restaurants, aes(x = review_count)) + geom_histogram()
+```
+
+join latino users with restaurants, group by restaurants, count users
+what are the names of the most reviewed restaurants
+```{r review counts for ethnicity}
+ReviewCountsForEthnicity = function(eth.names) {
+  eth.users = semi_join(users, eth.names, by = "name")
+  non.eth.users = anti_join(users, eth.names, by = "name")
+  
+  restaurant.reviews = inner_join(restaurants, reviews, by = "business_id")
+  restaurant.reviews.eth.users = inner_join(restaurant.reviews, eth.users, by = "user_id")
+  restaurant.reviews.non.eth.users = inner_join(restaurant.reviews, non.eth.users, by = "user_id")
+  
+  by.restaurant = group_by(restaurant.reviews.eth.users, business_id)
+  eth.summary = summarise(by.restaurant, num.reviews = n()) %>% arrange(desc(num.reviews))
+  eth.summary = inner_join(eth.summary, restaurants, by = "business_id") %>% select(business_id, name, num.reviews, categories)
+  
+  by.restaurant = group_by(restaurant.reviews.non.eth.users, business_id)
+  non.eth.summary = summarise(by.restaurant, num.reviews = n()) %>% arrange(desc(num.reviews))
+  non.eth.summary = inner_join(non.eth.summary, restaurants, by = "business_id") %>% select(business_id, name, num.reviews, categories)
+  
+  return(list(eth.summary, non.eth.summary))
+}
+```
+
+Top 50 restaurants among Latinos, based on number of reviews
+```{r}
+n = 50
+summaries = ReviewCountsForEthnicity(latino.names)
+n.eth.summaries = head(summaries[[1]], n)
+select(n.eth.summaries, name, num.reviews)
+```
+
+Top 50 restaurants among non-Latinos, based on number of reviews
+```{r}
+n.non.eth.summaries = head(summaries[[2]], n)
+select(n.non.eth.summaries, name, num.reviews)
+```
+
+Comparing the two sets, which restaurants are in the Top 50 for both groups?
+```{r}
+n.eth.summaries = select(n.eth.summaries, business_id, name)
+n.non.eth.summaries = select(n.non.eth.summaries, business_id, name)
+
+intersect(n.eth.summaries, n.non.eth.summaries) %>% select(name)
+```
+Surprisingly, these two groups share 38/50 (74%) of the same restaurants.
+
+Restaurants that are popular among Latinos but not among non-Latinos:
+```{r}
+setdiff(n.eth.summaries[1], n.non.eth.summaries[1])
+```
+
+Vice-versa:
+```{r}
+setdiff(n.non.eth.summaries[1], n.eth.summaries[1])
+```
+
+Similar analysis but for East Asians.
+Top 50 restaurants among East Asians, based on number of reviews:
+```{r}
+summaries = ReviewCountsForEthnicity(east.asian.names)
+n.eth.summaries = head(summaries[[1]], n)
+n.eth.summaries
+```
+
+Let's look at the distribution of categories
+```{r category utility}
+get_categories_dict = function(categories) {
+  
+}
+```
+
+
+Top 50 restaurants among non-Latinos, based on number of reviews
+```{r}
+n.non.eth.summaries = head(summaries[[2]], n)
+n.non.eth.summaries
+```
+
+Comparing the two sets, which restaurants are in the Top 50 for both groups?
+```{r}
+intersect(n.eth.summaries[1], n.non.eth.summaries[1])
+```
+26/50 are shared between the sets. This is more different than the comparison 
+we made with Latinos above.
+
+Restaurants that are popular among Asians but not among non-Asians:
+```{r}
+setdiff(n.eth.summaries[1], n.non.eth.summaries[1])
+```
+
+Vice-versa:
+```{r}
+setdiff(n.non.eth.summaries[1], n.eth.summaries[1])
+```
+It seems like common American chain restaurants are in this list, e.g. Subway,
+Denny's, Chipotle, P.F. Chang's.
+
