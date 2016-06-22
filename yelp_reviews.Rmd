@@ -71,7 +71,7 @@ get_restaurants_with_diff_ratings = function(ethnicity, n_restaurants, eth_names
   restaurant_reviews = inner_join(restaurants, reviews, by = "business_id")
   restaurant_reviews_users = inner_join(restaurant_reviews, users, by = "user_id")
   
-  p_value_cutoff = 0.05 / num_restaurants
+  p_value_cutoff = 0.05 / n_restaurants
 
   restaurant_names = c()
   eth_ratings = c()
@@ -109,9 +109,6 @@ get_restaurants_with_diff_ratings = function(ethnicity, n_restaurants, eth_names
   }
   restaurants_sig = data.frame(restaurant_names, eth_ratings, non_eth_ratings, num_eth_reviews, num_non_eth_reviews)
 }
-
-get_restaurants_with_diff_ratings('Chinese', 100, chinese_names)
-get_restaurants_with_diff_ratings('Chinese|Korean', 100, chinese_names)
 ```
 
 # Mexican Restaurants
@@ -128,33 +125,39 @@ building a "racist Yelp" for Mexican restaurants would not be all that useful.
 
 # Chinese Restaurants
 To get Chinese-sounding names, we will compile a list of all pinyin sounds and
-see if they exist in any first names.
+see if they exist in any first names. This runs in quadratic time so it is fairly
+slow.
 
 ```{r chinese users}
-pinyin = read.csv("pinyin_sounds.csv", stringsAsFactors = FALSE)
-pinyin_pattern = paste(pinyin$sound, collapse ="|")
 
-exclude = "benji|ique|cque|arjun|axi|lexi|xine|jinx|quant|change|strong|cruise|chunky|suite|burgh fan|tx fan|eping|pping|lping"
+load(file = "chinese_users.RData")
 
-tictoc::tic()
-indexes = vector("logical", length = nrow(users))
-for (i in 1:nrow(users)) {
-  if (length(grep(exclude, users$name[i])) > 0) next
+if (is.null(chinese_users)) {
+  pinyin = read.csv("pinyin_sounds.csv", stringsAsFactors = FALSE)
+  pinyin_pattern = paste(pinyin$sound, collapse ="|")
   
-  matches = grep(pinyin_pattern, users$name[i])
-  indexes[i] = length(matches) > 0
+  exclude = "benji|ique|cque|arjun|axi|lexi|xine|jinx|quant|change|strong|cruise|chunky|suite|burgh fan|tx fan|eping|pping|lping"
+  
+  tictoc::tic()
+  indexes = vector("logical", length = nrow(users))
+  for (i in 1:nrow(users)) {
+    if (length(grep(exclude, users$name[i])) > 0) next
+    
+    matches = grep(pinyin_pattern, users$name[i])
+    indexes[i] = length(matches) > 0
+  }
+  tictoc::toc()
+  chinese_users = users[indexes,]
+  nrow(chinese_users)
+  
+  # save chinese_users in case it takes a long time
+  save(chinese_users, file = "chinese_users.RData")
 }
-tictoc::toc()
-chinese_users = users[indexes,]
-nrow(chinese_users)
 
 chinese_names = as.data.frame(unique(chinese_users$name), stringsAsFactors = FALSE)
 names(chinese_names) = "name"
 results = get_restaurants_with_diff_ratings('Chinese', 100, chinese_names)
 results
-
-# save chinese_users in case it takes a long time
-save(chinese_users, file = "chinese_users.RData")
 ```
 
 There are 7755 users classified as Chinese, or about 1.4% of the user population.
@@ -163,7 +166,7 @@ popuplation as of 2010.
 
 # Chinese Names Take 2
 
-Going to try using the Top 100 Chinese Baby Names from 
+An alternative is to use the baby names from the following site:
 http://www.top-100-baby-names-search.com/chinese-name-meanings.html
 ```{r chinese users take 2}
 chinese_names2 = read.csv("top_100_baby_names_chinese.csv", stringsAsFactors = FALSE)
@@ -182,30 +185,37 @@ This yielded 2028 users and a different set of restaurants that had statisticall
 significantly different ratings. However, the number of reviews by Chinese people
 are still to low to make any significant conclusions.
 
-# East Asian Restaurants?
-What if we expand our search to Korean + Japanese + Chinese?
+# East Asian Restaurants
+What if we expand our search to Korean + Japanese + Chinese? Here we just use the 
+baby names list for Chinese names.
 
 ```{r}
+korean_names = read.csv("top_100_baby_names_korean.csv", stringsAsFactors = FALSE)
+korean_names$name = tolower(korean_names$name)
 
+japanese_names = read.csv("top_100_baby_names_japanese.csv", stringsAsFactors = FALSE)
+japanese_names$name = tolower(japanese_names$name)
+
+korean_users = semi_join(users, korean_names)
+japanese_users = semi_join(users, japanese_names)
+
+east_asian_names = as.data.frame(c(chinese_names2$name, japanese_names$name, korean_names$name), stringsAsFactors = FALSE)
+names(east_asian_names) = c("name")
+east_asian_users = semi_join(users, east_asian_names)
+
+results = get_restaurants_with_diff_ratings('Chinese|Korean|Japanese', 100, east_asian_names)
+results
 ```
 
-# Chinese Restaurants
-```{r chinese restaurants}
-
-```
-
-Of these, the only restuarant that has more than a single-digit number of 
-reviews by Chinese people is Sichuan Gourmet. It seems the Chinese reviewers
-had a higher mean rating than the rest of the population.
-
-# East Asian Restaurants
+# East Asian Users using pinyin for Chinese names
 ```{r east asian restaurants}
-east_asian = businesses %>% filter(grepl('Chinese|Korean|Japanese', categories)) %>% filter(grepl('Restaurants', categories)) %>% arrange(desc(review_count))
-restaurants = east_asian[1,]
-restaurant_reviews = inner_join(restaurants, reviews, by = "business_id")
-restaurant_reviews_users = inner_join(restaurant_reviews, users, by = "user_id")
+east_asian_names = as.data.frame(c(chinese_names$name, japanese_names$name, korean_names$name), stringsAsFactors = FALSE)
+names(east_asian_names) = c("name")
+east_asian_users = semi_join(users, east_asian_names)
+
+results = get_restaurants_with_diff_ratings('Chinese|Korean|Japanese', 100, east_asian_names)
+results
 ```
 
-## Other Questions
-- Is Chipotle more of a lightning rod between Latinos and non-Latinos? 
--- The only time it came up statistically signficant was for two locations, but the number of Latino reviews were small
+Slightly higher rating (4.87 vs 4.67) for Gangnam Asian BBQ Dining from East Asians
+than others in the data set.
