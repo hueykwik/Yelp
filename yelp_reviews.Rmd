@@ -11,6 +11,7 @@ library(readr)
 library(dplyr)
 library(ggplot2)
 library(stringi)
+library(hash)
 
 setwd("~/code/yelp")
 ```
@@ -265,77 +266,155 @@ ReviewCountsForEthnicity = function(eth.names) {
 }
 ```
 
-Top 50 restaurants among Latinos, based on number of reviews
-```{r}
-n = 50
-summaries = ReviewCountsForEthnicity(latino.names)
-n.eth.summaries = head(summaries[[1]], n)
-select(n.eth.summaries, name, num.reviews)
-```
+```{r compile stats}
+CompileStats = function(names, n) {
+  l = list()
+  summaries = ReviewCountsForEthnicity(names)
+  n.eth.summaries = head(summaries[[1]], n)
+  l[[1]] = n.eth.summaries
+  
+  n.non.eth.summaries = head(summaries[[2]], n)
+  l[[2]] = n.non.eth.summaries
+  
+  l[[3]] = semi_join(n.eth.summaries, n.non.eth.summaries.id.name, by = "business_id")
+  l[[4]] = anti_join(n.eth.summaries, n.non.eth.summaries, by = "business_id")
+  l[[5]] = anti_join(n.non.eth.summaries, n.eth.summaries, by = "business_id")
 
-Top 50 restaurants among non-Latinos, based on number of reviews
-```{r}
-n.non.eth.summaries = head(summaries[[2]], n)
-select(n.non.eth.summaries, name, num.reviews)
-```
-
-Comparing the two sets, which restaurants are in the Top 50 for both groups?
-```{r}
-n.eth.summaries = select(n.eth.summaries, business_id, name)
-n.non.eth.summaries = select(n.non.eth.summaries, business_id, name)
-
-intersect(n.eth.summaries, n.non.eth.summaries) %>% select(name)
-```
-Surprisingly, these two groups share 38/50 (74%) of the same restaurants.
-
-Restaurants that are popular among Latinos but not among non-Latinos:
-```{r}
-setdiff(n.eth.summaries[1], n.non.eth.summaries[1])
-```
-
-Vice-versa:
-```{r}
-setdiff(n.non.eth.summaries[1], n.eth.summaries[1])
-```
-
-Similar analysis but for East Asians.
-Top 50 restaurants among East Asians, based on number of reviews:
-```{r}
-summaries = ReviewCountsForEthnicity(east.asian.names)
-n.eth.summaries = head(summaries[[1]], n)
-n.eth.summaries
+  return(l)
+}
 ```
 
 Let's look at the distribution of categories
 ```{r category utility}
-get_categories_dict = function(categories) {
-  
+MakeCategoriesDict = function(categories) {
+  category.map = hash()
+  # category.map[["key"]]
+  for (category.string in categories) {
+    str = gsub("\'|\\[|\\]", '', category.string)
+    category.list = unlist(strsplit(str, ", "))
+    for (category in category.list) {
+      count = category.map[[category]]
+      if (is.null(count)) {
+        category.map[[category]] = 1
+      } else {
+        category.map[[category]] = count + 1
+      }
+    }
+  }
+  del('Restaurants', category.map)  # All the Restaurants have this category, so it's useless.
+  return(category.map)
 }
 ```
 
+What you want a bar chart for latinos and non latinos
+category is x axis 
+
+Top 50 restaurants among Latinos, based on number of reviews
+```{r}
+n = 50
+latinos = CompileStats(latino.names, n)
+latinos[[1]] %>% select(name, num.reviews)
+```
+
+Category counts:
+```{r}
+sort(values(MakeCategoriesDict(latinos[[1]]$categories)), decreasing = TRUE)
+```
 
 Top 50 restaurants among non-Latinos, based on number of reviews
 ```{r}
-n.non.eth.summaries = head(summaries[[2]], n)
-n.non.eth.summaries
+latinos[[2]] %>% select(name, num.reviews)
+```
+
+Category counts:
+```{r}
+sort(values(MakeCategoriesDict(latinos[[2]]$categories)), decreasing = TRUE)
 ```
 
 Comparing the two sets, which restaurants are in the Top 50 for both groups?
 ```{r}
-intersect(n.eth.summaries[1], n.non.eth.summaries[1])
+latinos[[3]] %>% select(name, num.reviews)
 ```
-26/50 are shared between the sets. This is more different than the comparison 
-we made with Latinos above.
+Surprisingly, these two groups share 39/50 (78%) of the same restaurants.
+
+Category counts:
+```{r}
+sort(values(MakeCategoriesDict(latinos[[3]]$categories)), decreasing = TRUE)
+```
+
+Restaurants that are popular among Latinos but not among non-Latinos:
+```{r}
+latinos[[4]] %>% select(name, num.reviews)
+```
+
+Category counts:
+```{r}
+sort(values(MakeCategoriesDict(latinos[[4]]$categories)), decreasing = TRUE)
+```
+Not surprisingly, Mexican restaurants show up the most here.
+
+Vice-versa:
+```{r}
+latinos[[5]] %>% select(name, num.reviews)
+```
+
+```{r}
+sort(values(MakeCategoriesDict(latinos[[5]]$categories)), decreasing = TRUE)
+```
+No Mexican restaurants here.
+
+## Similar analysis but for East Asians
+
+Top 50 restaurants among East Asians, based on number of reviews:
+```{r}
+asians = CompileStats(east.asian.names, n)
+asians[[1]] %>% select(name, num.reviews)
+```
+
+Category counts:
+```{r}
+sort(values(MakeCategoriesDict(asians[[1]]$categories)), decreasing = TRUE)
+```
+
+Top 50 restaurants among non-East Asians:
+```{r}
+asians[[2]] %>% select(name, num.reviews)
+```
+20 of these are Asian restaurants.
+
+Category counts:
+```{r}
+sort(values(MakeCategoriesDict(asians[[2]]$categories)), decreasing = TRUE)
+```
+Whereas 11 of these are Asian.
+
+Comparing the two sets, which restaurants are in the Top 50 for both groups?
+```{r}
+asians[[3]] %>% select(name, num.reviews)
+```
+33/50 are shared between the sets. 
+
+Category counts:
+```{r}
+sort(values(MakeCategoriesDict(asians[[3]]$categories)), decreasing = TRUE)
+```
 
 Restaurants that are popular among Asians but not among non-Asians:
 ```{r}
-setdiff(n.eth.summaries[1], n.non.eth.summaries[1])
+asians[[4]] %>% select(name, num.reviews)
+```
+
+Category counts:
+```{r}
+sort(values(MakeCategoriesDict(asians[[4]]$categories)), decreasing = TRUE)
 ```
 
 Vice-versa:
 ```{r}
-setdiff(n.non.eth.summaries[1], n.eth.summaries[1])
+asians[[5]] %>% select(name, num.reviews)
 ```
-It seems like common American chain restaurants are in this list, e.g. Subway,
-Denny's, Chipotle, P.F. Chang's.
 
+Category counts:
+```{r}
+sort(values(MakeCategoriesDict(asians[[5]]$categories)), decreasing = TRUE)
+```
