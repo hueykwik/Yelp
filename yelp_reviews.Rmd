@@ -17,18 +17,25 @@ setwd("~/code/yelp")
 ```
 
 # Introduction 
-Are there differences in rating ethnic restaurants between people who are of
-that ethnicity vs. not? For example, do Asians rate Asian restaurants differently
-than non-Asians?
+Are there differences in rating restaurants among different ethnicities? For 
+instance, perhaps Chinese people rate Chinese restaurants differently from other
+Americans (presumably based on authenticity). If so, building a "racist Yelp" could be useful 
+for identifying more authetnic restaurants.
 
-In this exploration, we look at Mexican restaurants and Chinese restaurants and
-try to see if there are any differences. 
+Here we look at the Yelp dataset to try to tease out any differences, looking
+at Mexican and East Asian restaurants.
 
-## Load businesses
+### Data
 The Yelp data contains 2.2M reviews and 591K tips by 552K users for 77K businesses.
+
 The cities included are Edinburgh (UK), Karlsruhe (Germany), Montreal and Waterloo (Canada),
 and Pittsburgh, Charlotte, Urbana-Champaign, Phoenix, Las Vegas, Madison (US).
-First, let's load the Yelp businesses. I used the JSON to CSV converter in https://github.com/Yelp/dataset-examples to make it easier for me to load.
+
+I used the JSON to CSV converter in https://github.com/Yelp/dataset-examples 
+to make it easier to load.
+
+We use a list of popular Latino names pulled from http://www.1happybirthday.com/popular_names_latino.php.
+We classify a user as Latino if their name appears in this list.
 
 ```{r load data}
 businesses = read_csv("data/yelp_academic_dataset_business.csv")
@@ -63,7 +70,10 @@ print(paste("Latino:", nrow(latino.users)))
 print(paste("Non-Latino:" , nrow(non.latino.users)))
 ```
 
-Less than 3% of users in the dataset have been classified as Latino.
+Less than 3% of users in the dataset have been classified as Latino. There are 
+probably more Latino users in the dataset who have names of European origin, but
+since Yelp only gives us access to first names, this is probably the best we can
+do at the moment.
 
 Below is a function to get all the top n restaurants of a certain ethnicity and
 bucket the user reviews into members of that ethnicity or not. We then run a 
@@ -131,11 +141,12 @@ building a "racist Yelp" for Mexican restaurants would not be all that useful.
 
 ## Chinese Restaurants
 To get Chinese-sounding names, we will compile a list of all pinyin sounds and
-see if they exist in any first names. Unfortunately, this runs in quadratic time.
+see if they exist in any first names. This runs in quadratic time, so we save
+the users who matched.
 
 ```{r chinese users}
 
-load(file = "chinese_users.RData")
+load(file = "chinese.users.RData")
 
 if (is.null(chinese.users)) {
   pinyin = read.csv("pinyin_sounds.csv", stringsAsFactors = FALSE)
@@ -156,43 +167,51 @@ if (is.null(chinese.users)) {
   nrow(chinese.users)
   
   # save chinese.users in case it takes a long time
-  save(chinese.users, file = "chinese_users.RData")
+  save(chinese.users, file = "chinese.users.RData")
 }
 
 chinese.names = as.data.frame(unique(chinese.users$name), stringsAsFactors = FALSE)
 names(chinese.names) = "name"
+set.seed(1)
+sample_n(chinese.names, 10)
+```
+
+There are 7755 users classified as Chinese, or about 1.4% of the user population.
+Sanity checking: Americans of Chinese descent consititute 1.2% of the total U.S.
+popuplation as of 2010. 
+
+You can see from the sample that some of the names look more obviously Chinese than not.
+This suggests that we probably classified too many names as Chinese,
+as it is likely that many Chinese users of Yelp have Western first names.
+
+```{r}
 results = GetRestaurantsWithDiffRatings('Chinese', 100, chinese.names)
+names(results) = c("name", "chinese_ratings", "non_chinese_ratings", "n_chinese", "n_non_chinese")
 results
 ```
 
+Only 3 restaurants have statistically different ratings, and two of them only have
+2 Chinese reviews!
 
-
-There are 7755 users classified as Chinese, or about 1.4% of the user population.
-Per Wikipedia, Americans of Chinese descent consititute 1.2% of the total U.S.
-popuplation as of 2010.
-
-# Chinese Names Take 2
-
+## Chinese Names Take 2
 An alternative is to use the baby names from the following site:
 http://www.top-100-baby-names-search.com/chinese-name-meanings.html
 ```{r chinese users take 2}
 chinese.names2 = read.csv("top_100_baby_names_chinese.csv", stringsAsFactors = FALSE)
 chinese.names2$name = tolower(chinese.names2$name)
-
 chinese.names2 = chinese.names2[-124,]  # remove "juan"
-
 chinese.users2 = semi_join(users, chinese.names2, by = "name")
-nrow(chinese.users2)
 
 results = GetRestaurantsWithDiffRatings('Chinese', 100, chinese.names2)
+names(results) = c("name", "chinese_ratings", "non_chinese_ratings", "n_chinese", "n_non_chinese")
 results
 ```
 
 This yielded 2028 users and a different set of restaurants that had statistically
 significantly different ratings. However, the number of reviews by Chinese people
-are still to low to make any significant conclusions.
+are still too low to make any significant conclusions.
 
-# East Asian Restaurants
+## East Asian Restaurants
 What if we expand our search to Korean + Japanese + Chinese? Here we just use the 
 baby names list for Chinese names.
 
@@ -211,40 +230,44 @@ names(east.asian.names) = c("name")
 east.asian.users = semi_join(users, east.asian.names, by = "name")
 
 results = GetRestaurantsWithDiffRatings('Chinese|Korean|Japanese', 100, east.asian.names)
+names(results) = c("name", "asian_ratings", "non_asian_ratings", "n_asian", "n_non_asian")
 results
 ```
 
-# East Asian Users using pinyin for Chinese names
+The only restaurant that has more than 10 East Asian reviews is Gangnam Asian
+BBQ Dining. Its rating among Asians is slightly higher.
+
+## East Asian Users using pinyin for Chinese names
 ```{r east asian restaurants}
 east.asian.names = as.data.frame(c(chinese.names$name, japanese.names$name, korean.names$name), stringsAsFactors = FALSE)
 names(east.asian.names) = c("name")
-east.asian.users = semi_join(users, east.asian.names)
+east.asian.users = semi_join(users, east.asian.names, by = "name")
 
 results = GetRestaurantsWithDiffRatings('Chinese|Korean|Japanese', 100, east.asian.names)
 results
 ```
 
-Slightly higher rating (4.87 vs 4.67) for Gangnam Asian BBQ Dining from East Asians
-than others in the data set.
+Again, nothing terribly interesting here.
 
 # Conclusion
-You can't construct a good "racist Yelp" from the data provided. If we had access
-to last names, we might be able to include Asians or Latinos with Western first names,
-which may change the results. 
+You can't construct a good "racist Yelp" from the data provided. If we had a better
+way of classifying the race of users, we might be able to get better results.
 
 ## Restaurant preferences
 What kind of restaurants do Latinos review?
 What kind of restaurants do Asians review?
 
-what's the distribution of review count on yelp?
+What's the distribution of review count on yelp?
 ```{r distribution of review count}
 bw = function(x) diff(range(x)) / (2 * IQR(x) / length(x)^(1/3))
 restaurants = businesses %>% filter(grepl('Restaurants', categories)) %>% arrange(desc(review_count))
 ggplot(restaurants, aes(x = review_count)) + geom_histogram()
 ```
 
-join latino users with restaurants, group by restaurants, count users
-what are the names of the most reviewed restaurants
+This seems in line with what we expect. The vast majority of restaurants have 
+a few reviews, with a long tail -- some restaurants have many more reviews.
+
+Here is some code to group reviews by ethnicity.
 ```{r review counts for ethnicity}
 ReviewCountsForEthnicity = function(eth.names) {
   eth.users = semi_join(users, eth.names, by = "name")
@@ -255,12 +278,12 @@ ReviewCountsForEthnicity = function(eth.names) {
   restaurant.reviews.non.eth.users = inner_join(restaurant.reviews, non.eth.users, by = "user_id")
   
   by.restaurant = group_by(restaurant.reviews.eth.users, business_id)
-  eth.summary = summarise(by.restaurant, num.reviews = n()) %>% arrange(desc(num.reviews))
-  eth.summary = inner_join(eth.summary, restaurants, by = "business_id") %>% select(business_id, name, num.reviews, categories)
+  eth.summary = summarise(by.restaurant, num.reviews = n()) 
+  eth.summary = inner_join(eth.summary, restaurants, by = "business_id") %>% select(business_id, name, num.reviews, categories) 
   
   by.restaurant = group_by(restaurant.reviews.non.eth.users, business_id)
   non.eth.summary = summarise(by.restaurant, num.reviews = n()) %>% arrange(desc(num.reviews))
-  non.eth.summary = inner_join(non.eth.summary, restaurants, by = "business_id") %>% select(business_id, name, num.reviews, categories)
+  non.eth.summary = inner_join(non.eth.summary, restaurants, by = "business_id") %>% select(business_id, name, num.reviews, categories) 
   
   return(list(eth.summary, non.eth.summary))
 }
@@ -270,13 +293,14 @@ ReviewCountsForEthnicity = function(eth.names) {
 CompileStats = function(names, n) {
   l = list()
   summaries = ReviewCountsForEthnicity(names)
-  n.eth.summaries = head(summaries[[1]], n)
+  
+  n.eth.summaries = head(summaries[[1]] %>% arrange(desc(num.reviews)), n)
   l[[1]] = n.eth.summaries
   
-  n.non.eth.summaries = head(summaries[[2]], n)
+  n.non.eth.summaries = head(summaries[[2]] %>% arrange(desc(num.reviews)) , n)
   l[[2]] = n.non.eth.summaries
   
-  l[[3]] = semi_join(n.eth.summaries, n.non.eth.summaries.id.name, by = "business_id")
+  l[[3]] = semi_join(n.eth.summaries, n.non.eth.summaries, by = "business_id")
   l[[4]] = anti_join(n.eth.summaries, n.non.eth.summaries, by = "business_id")
   l[[5]] = anti_join(n.non.eth.summaries, n.eth.summaries, by = "business_id")
 
@@ -284,7 +308,7 @@ CompileStats = function(names, n) {
 }
 ```
 
-Let's look at the distribution of categories
+This is a utlity function to count the categories of a set of restaurants.
 ```{r category utility}
 MakeCategoriesDict = function(categories) {
   category.map = hash()
@@ -306,12 +330,9 @@ MakeCategoriesDict = function(categories) {
 }
 ```
 
-What you want a bar chart for latinos and non latinos
-category is x axis 
-
-Top 50 restaurants among Latinos, based on number of reviews
+Top 100 restaurants among Latinos, based on number of reviews:
 ```{r}
-n = 50
+n = 100
 latinos = CompileStats(latino.names, n)
 latinos[[1]] %>% select(name, num.reviews)
 ```
@@ -320,8 +341,9 @@ Category counts:
 ```{r}
 sort(values(MakeCategoriesDict(latinos[[1]]$categories)), decreasing = TRUE)
 ```
+Mostly Nightlife, Bars, American Food.
 
-Top 50 restaurants among non-Latinos, based on number of reviews
+Top 100 restaurants among non-Latinos, based on number of reviews
 ```{r}
 latinos[[2]] %>% select(name, num.reviews)
 ```
@@ -330,17 +352,19 @@ Category counts:
 ```{r}
 sort(values(MakeCategoriesDict(latinos[[2]]$categories)), decreasing = TRUE)
 ```
+Mostly Nightlife, Bars, American Food.
 
-Comparing the two sets, which restaurants are in the Top 50 for both groups?
+Comparing the two sets, which restaurants are in common?
 ```{r}
 latinos[[3]] %>% select(name, num.reviews)
 ```
-Surprisingly, these two groups share 39/50 (78%) of the same restaurants.
+75%!
 
 Category counts:
 ```{r}
 sort(values(MakeCategoriesDict(latinos[[3]]$categories)), decreasing = TRUE)
 ```
+Bars, Nightlife, American food.
 
 Restaurants that are popular among Latinos but not among non-Latinos:
 ```{r}
@@ -351,7 +375,7 @@ Category counts:
 ```{r}
 sort(values(MakeCategoriesDict(latinos[[4]]$categories)), decreasing = TRUE)
 ```
-Not surprisingly, Mexican restaurants show up the most here.
+Hard to see, a little bit of Mexican food.
 
 Vice-versa:
 ```{r}
@@ -365,7 +389,7 @@ No Mexican restaurants here.
 
 ## Similar analysis but for East Asians
 
-Top 50 restaurants among East Asians, based on number of reviews:
+Top 100 restaurants among East Asians, based on number of reviews:
 ```{r}
 asians = CompileStats(east.asian.names, n)
 asians[[1]] %>% select(name, num.reviews)
@@ -375,29 +399,31 @@ Category counts:
 ```{r}
 sort(values(MakeCategoriesDict(asians[[1]]$categories)), decreasing = TRUE)
 ```
+Japanese, Buffets, Bars, Chinese, Nightlife
 
-Top 50 restaurants among non-East Asians:
+Top 100 restaurants among non-East Asians:
 ```{r}
 asians[[2]] %>% select(name, num.reviews)
 ```
-20 of these are Asian restaurants.
 
 Category counts:
 ```{r}
 sort(values(MakeCategoriesDict(asians[[2]]$categories)), decreasing = TRUE)
 ```
-Whereas 11 of these are Asian.
+Bars, Nightlife, American
 
 Comparing the two sets, which restaurants are in the Top 50 for both groups?
 ```{r}
 asians[[3]] %>% select(name, num.reviews)
 ```
-33/50 are shared between the sets. 
+55% are shared amongst the two groups. This is different than what we saw with
+the Latino vs. non-Latino comparisons above.
 
 Category counts:
 ```{r}
 sort(values(MakeCategoriesDict(asians[[3]]$categories)), decreasing = TRUE)
 ```
+Bars, Buffets, Nightlife
 
 Restaurants that are popular among Asians but not among non-Asians:
 ```{r}
@@ -408,6 +434,7 @@ Category counts:
 ```{r}
 sort(values(MakeCategoriesDict(asians[[4]]$categories)), decreasing = TRUE)
 ```
+Asian food
 
 Vice-versa:
 ```{r}
@@ -418,3 +445,4 @@ Category counts:
 ```{r}
 sort(values(MakeCategoriesDict(asians[[5]]$categories)), decreasing = TRUE)
 ```
+Non-Asian food. It is interesting that there is more disparity between Asians and non-Asians than Latinos and non-Latinos.

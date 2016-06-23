@@ -125,11 +125,14 @@ $(document).ready(function () {
 
 <div id="introduction" class="section level1">
 <h1>Introduction</h1>
-<p>Are there differences in rating ethnic restaurants between people who are of that ethnicity vs. not? For example, do Asians rate Asian restaurants differently than non-Asians?</p>
-<p>In this exploration, we look at Mexican restaurants and Chinese restaurants and try to see if there are any differences.</p>
-<div id="load-businesses" class="section level2">
-<h2>Load businesses</h2>
-<p>The Yelp data contains 2.2M reviews and 591K tips by 552K users for 77K businesses. The cities included are Edinburgh (UK), Karlsruhe (Germany), Montreal and Waterloo (Canada), and Pittsburgh, Charlotte, Urbana-Champaign, Phoenix, Las Vegas, Madison (US). First, let’s load the Yelp businesses. I used the JSON to CSV converter in <a href="https://github.com/Yelp/dataset-examples" class="uri">https://github.com/Yelp/dataset-examples</a> to make it easier for me to load.</p>
+<p>Are there differences in rating restaurants among different ethnicities? For instance, perhaps Chinese people rate Chinese restaurants differently from other Americans (presumably based on authenticity). If so, building a “racist Yelp” could be useful for identifying more authetnic restaurants.</p>
+<p>Here we look at the Yelp dataset to try to tease out any differences, looking at Mexican and East Asian restaurants.</p>
+<div id="data" class="section level3">
+<h3>Data</h3>
+<p>The Yelp data contains 2.2M reviews and 591K tips by 552K users for 77K businesses.</p>
+<p>The cities included are Edinburgh (UK), Karlsruhe (Germany), Montreal and Waterloo (Canada), and Pittsburgh, Charlotte, Urbana-Champaign, Phoenix, Las Vegas, Madison (US).</p>
+<p>I used the JSON to CSV converter in <a href="https://github.com/Yelp/dataset-examples" class="uri">https://github.com/Yelp/dataset-examples</a> to make it easier to load.</p>
+<p>We use a list of popular Latino names pulled from <a href="http://www.1happybirthday.com/popular_names_latino.php" class="uri">http://www.1happybirthday.com/popular_names_latino.php</a>. We classify a user as Latino if their name appears in this list.</p>
 <pre class="r"><code>businesses = read_csv(&quot;data/yelp_academic_dataset_business.csv&quot;)
 reviews = read_csv(&quot;data/yelp_academic_dataset_review.csv&quot;)
 users = read_csv(&quot;data/yelp_academic_dataset_user.csv&quot;)
@@ -157,7 +160,7 @@ print(paste(&quot;Latino:&quot;, nrow(latino.users)))</code></pre>
 <pre><code>## [1] &quot;Latino: 14987&quot;</code></pre>
 <pre class="r"><code>print(paste(&quot;Non-Latino:&quot; , nrow(non.latino.users)))</code></pre>
 <pre><code>## [1] &quot;Non-Latino: 537352&quot;</code></pre>
-<p>Less than 3% of users in the dataset have been classified as Latino.</p>
+<p>Less than 3% of users in the dataset have been classified as Latino. There are probably more Latino users in the dataset who have names of European origin, but since Yelp only gives us access to first names, this is probably the best we can do at the moment.</p>
 <p>Below is a function to get all the top n restaurants of a certain ethnicity and bucket the user reviews into members of that ethnicity or not. We then run a t-test applying the Bonferroni correction to find which differences are statistically significant.</p>
 <pre class="r"><code>GetRestaurantsWithDiffRatings = function(ethnicity, n.restaurants, eth.names) {
   eth.restaurants = businesses %&gt;% filter(grepl(ethnicity, categories)) %&gt;% filter(grepl('Restaurants', categories)) %&gt;% arrange(desc(review_count))
@@ -165,43 +168,43 @@ print(paste(&quot;Latino:&quot;, nrow(latino.users)))</code></pre>
   restaurant.reviews = inner_join(restaurants, reviews, by = &quot;business_id&quot;)
   restaurant.reviews.users = inner_join(restaurant.reviews, users, by = &quot;user_id&quot;)
   
-  p_value_cutoff = 0.05 / n.restaurants
+  p.value.cutoff = 0.05 / n.restaurants
 
   restaurant_names = c()
-  eth_ratings = c()
-  non_eth_ratings = c()
-  num_eth_reviews = c()
-  num_non_eth_reviews = c()
+  eth.ratings = c()
+  non.eth.ratings = c()
+  num.eth.reviews = c()
+  num.non.eth.reviews = c()
 
   for (id in restaurants$business_id) {
     subset = filter(restaurant.reviews.users, business_id == id)
-    eth_reviews = semi_join(subset, eth.names, c(&quot;name.y&quot; = &quot;name&quot;))
-    non_eth_reviews = anti_join(subset, eth.names, c(&quot;name.y&quot; = &quot;name&quot;))
+    eth.reviews = semi_join(subset, eth.names, c(&quot;name.y&quot; = &quot;name&quot;))
+    non.eth.reviews = anti_join(subset, eth.names, c(&quot;name.y&quot; = &quot;name&quot;))
     
-    if (length(eth_reviews$stars.y) &lt;= 1 || length(non_eth_reviews$stars.y) &lt;= 1) next  # Prevent errors to t-test
+    if (length(eth.reviews$stars.y) &lt;= 1 || length(non.eth.reviews$stars.y) &lt;= 1) next  # Prevent errors to t-test
     
     try({
       alt = &quot;two.sided&quot;
-      eth_mean = mean(eth_reviews$stars.y)
-      non_eth_mean = mean(non_eth_reviews$stars.y)
-      if (eth_mean &lt; non_eth_mean) {
+      eth.mean = mean(eth.reviews$stars.y)
+      non.eth.mean = mean(non.eth.reviews$stars.y)
+      if (eth.mean &lt; non.eth.mean) {
         alt = &quot;less&quot;
       }
-      if (eth_mean &gt; non_eth_mean) {
+      if (eth.mean &gt; non.eth.mean) {
         alt = &quot;greater&quot;
       }
-      res = t.test(eth_reviews$stars.y, non_eth_reviews$stars.y, alternative = alt)
-      if (res$p.value &lt; p_value_cutoff) {
+      res = t.test(eth.reviews$stars.y, non.eth.reviews$stars.y, alternative = alt)
+      if (res$p.value &lt; p.value.cutoff) {
         restaurant_names = c(restaurant_names, subset$name.x[1])
-        eth_ratings = c(eth_ratings, eth_mean)
-        non_eth_ratings = c(non_eth_ratings, non_eth_mean)
-        num_eth_reviews = c(num_eth_reviews, nrow(eth_reviews))
-        num_non_eth_reviews = c(num_non_eth_reviews, nrow(non_eth_reviews))
+        eth.ratings = c(eth.ratings, eth.mean)
+        non.eth.ratings = c(non.eth.ratings, non.eth.mean)
+        num.eth.reviews = c(num.eth.reviews, nrow(eth.reviews))
+        num.non.eth.reviews = c(num.non.eth.reviews, nrow(non.eth.reviews))
       }
     }
     )
   }
-  restaurants_sig = data.frame(restaurant_names, eth_ratings, non_eth_ratings, num_eth_reviews, num_non_eth_reviews)
+  return(data.frame(restaurant_names, eth.ratings, non.eth.ratings, num.eth.reviews, num.non.eth.reviews))
 }</code></pre>
 </div>
 <div id="mexican-restaurants" class="section level2">
@@ -209,12 +212,12 @@ print(paste(&quot;Latino:&quot;, nrow(latino.users)))</code></pre>
 <p>The following table shows the restaurants where Latino ratings and non-Latino ratings had statistically significant differences:</p>
 <pre class="r"><code>results = GetRestaurantsWithDiffRatings('Mexican', 100, latino.names)
 results</code></pre>
-<pre><code>##                 restaurant_names eth_ratings non_eth_ratings
+<pre><code>##                 restaurant_names eth.ratings non.eth.ratings
 ## 1                       Javier's      4.5625        3.811508
 ## 2 Vida Mexican Kitchen y Cantina      4.0000        3.421053
 ## 3          Diego Mexican Cuisine      5.0000        3.470852
 ## 4                    Two Hippies      5.0000        3.733607
-##   num_eth_reviews num_non_eth_reviews
+##   num.eth.reviews num.non.eth.reviews
 ## 1              16                 504
 ## 2               3                 266
 ## 3               4                 223
@@ -223,12 +226,12 @@ results</code></pre>
 </div>
 <div id="chinese-restaurants" class="section level2">
 <h2>Chinese Restaurants</h2>
-<p>To get Chinese-sounding names, we will compile a list of all pinyin sounds and see if they exist in any first names. Unfortunately, this runs in quadratic time.</p>
-<pre class="r"><code>load(file = &quot;chinese_users.RData&quot;)
+<p>To get Chinese-sounding names, we will compile a list of all pinyin sounds and see if they exist in any first names. This runs in quadratic time, so we save the users who matched.</p>
+<pre class="r"><code>load(file = &quot;chinese.users.RData&quot;)
 
-if (is.null(chinese_users)) {
+if (is.null(chinese.users)) {
   pinyin = read.csv(&quot;pinyin_sounds.csv&quot;, stringsAsFactors = FALSE)
-  pinyin_pattern = paste(pinyin$sound, collapse =&quot;|&quot;)
+  pinyin.pattern = paste(pinyin$sound, collapse =&quot;|&quot;)
   
   exclude = &quot;benji|ique|cque|arjun|axi|lexi|xine|jinx|quant|change|strong|cruise|chunky|suite|burgh fan|tx fan|eping|pping|lping&quot;
   
@@ -237,147 +240,196 @@ if (is.null(chinese_users)) {
   for (i in 1:nrow(users)) {
     if (length(grep(exclude, users$name[i])) &gt; 0) next
     
-    matches = grep(pinyin_pattern, users$name[i])
+    matches = grep(pinyin.pattern, users$name[i])
     indexes[i] = length(matches) &gt; 0
   }
   tictoc::toc()
-  chinese_users = users[indexes,]
-  nrow(chinese_users)
+  chinese.users = users[indexes,]
+  nrow(chinese.users)
   
-  # save chinese_users in case it takes a long time
-  save(chinese_users, file = &quot;chinese_users.RData&quot;)
+  # save chinese.users in case it takes a long time
+  save(chinese.users, file = &quot;chinese.users.RData&quot;)
 }
 
-chinese_names = as.data.frame(unique(chinese_users$name), stringsAsFactors = FALSE)
-names(chinese_names) = &quot;name&quot;
-results = GetRestaurantsWithDiffRatings('Chinese', 100, chinese_names)
+chinese.names = as.data.frame(unique(chinese.users$name), stringsAsFactors = FALSE)
+names(chinese.names) = &quot;name&quot;
+set.seed(1)
+sample_n(chinese.names, 10)</code></pre>
+<pre><code>##           name
+## 870    bunjies
+## 1219     jiali
+## 1875  miyishia
+## 2972  donghwan
+## 660     zhenya
+## 2938 foodsmurf
+## 3089  yosafena
+## 2160    murphi
+## 2056      zong
+## 202     shu ju</code></pre>
+<p>There are 7755 users classified as Chinese, or about 1.4% of the user population. Sanity checking: Americans of Chinese descent consititute 1.2% of the total U.S. popuplation as of 2010.</p>
+<p>You can see from the sample that some of the names look more obviously Chinese than not. This suggests that we probably classified too many names as Chinese, as it is likely that many Chinese users of Yelp have Western first names.</p>
+<pre class="r"><code>results = GetRestaurantsWithDiffRatings('Chinese', 100, chinese.names)
+names(results) = c(&quot;name&quot;, &quot;chinese_ratings&quot;, &quot;non_chinese_ratings&quot;, &quot;n_chinese&quot;, &quot;n_non_chinese&quot;)
 results</code></pre>
-<pre><code>##                     restaurant_names eth_ratings non_eth_ratings
-## 1                       P.F. Chang's    5.000000        3.370968
-## 2 Ling &amp; Louie's Asian Bar and Grill    2.000000        3.880682
-## 3                    Sichuan Gourmet    4.636364        3.784000
-##   num_eth_reviews num_non_eth_reviews
-## 1               2                 186
-## 2               2                 176
-## 3              22                 125</code></pre>
-<p>There are 7755 users classified as Chinese, or about 1.4% of the user population. Per Wikipedia, Americans of Chinese descent consititute 1.2% of the total U.S. popuplation as of 2010.</p>
+<pre><code>##                                 name chinese_ratings non_chinese_ratings
+## 1                       P.F. Chang's        5.000000            3.370968
+## 2 Ling &amp; Louie's Asian Bar and Grill        2.000000            3.880682
+## 3                    Sichuan Gourmet        4.636364            3.784000
+##   n_chinese n_non_chinese
+## 1         2           186
+## 2         2           176
+## 3        22           125</code></pre>
+<p>Only 3 restaurants have statistically different ratings, and two of them only have 2 Chinese reviews!</p>
 </div>
-</div>
-<div id="chinese-names-take-2" class="section level1">
-<h1>Chinese Names Take 2</h1>
+<div id="chinese-names-take-2" class="section level2">
+<h2>Chinese Names Take 2</h2>
 <p>An alternative is to use the baby names from the following site: <a href="http://www.top-100-baby-names-search.com/chinese-name-meanings.html" class="uri">http://www.top-100-baby-names-search.com/chinese-name-meanings.html</a></p>
-<pre class="r"><code>chinese_names2 = read.csv(&quot;top_100_baby_names_chinese.csv&quot;, stringsAsFactors = FALSE)
-chinese_names2$name = tolower(chinese_names2$name)
+<pre class="r"><code>chinese.names2 = read.csv(&quot;top_100_baby_names_chinese.csv&quot;, stringsAsFactors = FALSE)
+chinese.names2$name = tolower(chinese.names2$name)
+chinese.names2 = chinese.names2[-124,]  # remove &quot;juan&quot;
+chinese.users2 = semi_join(users, chinese.names2, by = &quot;name&quot;)
 
-chinese_names2 = chinese_names2[-124,]  # remove &quot;juan&quot;
-
-chinese_users2 = semi_join(users, chinese_names2)</code></pre>
-<pre><code>## Joining by: &quot;name&quot;</code></pre>
-<pre class="r"><code>nrow(chinese_users2)</code></pre>
-<pre><code>## [1] 2028</code></pre>
-<pre class="r"><code>results = GetRestaurantsWithDiffRatings('Chinese', 100, chinese_names2)
+results = GetRestaurantsWithDiffRatings('Chinese', 100, chinese.names2)
+names(results) = c(&quot;name&quot;, &quot;chinese_ratings&quot;, &quot;non_chinese_ratings&quot;, &quot;n_chinese&quot;, &quot;n_non_chinese&quot;)
 results</code></pre>
-<pre><code>##       restaurant_names eth_ratings non_eth_ratings num_eth_reviews
-## 1       Ping Pang Pong           4        3.546809               5
-## 2         Veggie House           5        4.541950               2
-## 3 KJ Dim Sum &amp; Seafood           5        3.394928               2
-## 4       Chou's Kitchen           5        4.029268               3
-## 5           Noodle Pot           5        3.685393               2
-##   num_non_eth_reviews
-## 1                 470
-## 2                 441
-## 3                 276
-## 4                 205
-## 5                 178</code></pre>
-<p>This yielded 2028 users and a different set of restaurants that had statistically significantly different ratings. However, the number of reviews by Chinese people are still to low to make any significant conclusions.</p>
+<pre><code>##                   name chinese_ratings non_chinese_ratings n_chinese
+## 1       Ping Pang Pong               4            3.546809         5
+## 2         Veggie House               5            4.541950         2
+## 3 KJ Dim Sum &amp; Seafood               5            3.394928         2
+## 4       Chou's Kitchen               5            4.029268         3
+## 5           Noodle Pot               5            3.685393         2
+##   n_non_chinese
+## 1           470
+## 2           441
+## 3           276
+## 4           205
+## 5           178</code></pre>
+<p>This yielded 2028 users and a different set of restaurants that had statistically significantly different ratings. However, the number of reviews by Chinese people are still too low to make any significant conclusions.</p>
 </div>
-<div id="east-asian-restaurants" class="section level1">
-<h1>East Asian Restaurants</h1>
+<div id="east-asian-restaurants" class="section level2">
+<h2>East Asian Restaurants</h2>
 <p>What if we expand our search to Korean + Japanese + Chinese? Here we just use the baby names list for Chinese names.</p>
-<pre class="r"><code>korean_names = read.csv(&quot;top_100_baby_names_korean.csv&quot;, stringsAsFactors = FALSE)
-korean_names$name = tolower(korean_names$name)
+<pre class="r"><code>korean.names = read.csv(&quot;top_100_baby_names_korean.csv&quot;, stringsAsFactors = FALSE)
+korean.names$name = tolower(korean.names$name)
 
-japanese_names = read.csv(&quot;top_100_baby_names_japanese.csv&quot;, stringsAsFactors = FALSE)
-japanese_names$name = tolower(japanese_names$name)
+japanese.names = read.csv(&quot;top_100_baby_names_japanese.csv&quot;, stringsAsFactors = FALSE)
+japanese.names$name = tolower(japanese.names$name)
 
-korean_users = semi_join(users, korean_names)</code></pre>
-<pre><code>## Joining by: &quot;name&quot;</code></pre>
-<pre class="r"><code>japanese_users = semi_join(users, japanese_names)</code></pre>
-<pre><code>## Joining by: &quot;name&quot;</code></pre>
-<pre class="r"><code>east.asian.names = as.data.frame(c(chinese_names2$name, japanese_names$name, korean_names$name), stringsAsFactors = FALSE)
+korean.users = semi_join(users, korean.names, by = &quot;name&quot;)
+japanese.users = semi_join(users, japanese.names, by = &quot;name&quot;)
+
+east.asian.names = as.data.frame(c(chinese.names2$name, japanese.names$name, korean.names$name), stringsAsFactors = FALSE)
 names(east.asian.names) = c(&quot;name&quot;)
-east_asian_users = semi_join(users, east.asian.names)</code></pre>
-<pre><code>## Joining by: &quot;name&quot;</code></pre>
-<pre class="r"><code>results = GetRestaurantsWithDiffRatings('Chinese|Korean|Japanese', 100, east.asian.names)
+east.asian.users = semi_join(users, east.asian.names, by = &quot;name&quot;)
+
+results = GetRestaurantsWithDiffRatings('Chinese|Korean|Japanese', 100, east.asian.names)
+names(results) = c(&quot;name&quot;, &quot;asian_ratings&quot;, &quot;non_asian_ratings&quot;, &quot;n_asian&quot;, &quot;n_non_asian&quot;)
 results</code></pre>
-<pre><code>##             restaurant_names eth_ratings non_eth_ratings num_eth_reviews
-## 1   Gangnam Asian BBQ Dining    4.872727        4.667679              55
-## 2             Ping Pang Pong    4.000000        3.544872               7
-## 3               Veggie House    5.000000        4.541950               2
-## 4 Kabuki Japanese Restaurant    4.000000        3.495957               3
-## 5                  Makino LV    4.857143        3.697595               7
-## 6           Tonkatsu Kiyoshi    5.000000        4.524904               3
-##   num_non_eth_reviews
-## 1                1646
-## 2                 468
-## 3                 441
-## 4                 371
-## 5                 291
-## 6                 261</code></pre>
+<pre><code>##                         name asian_ratings non_asian_ratings n_asian
+## 1   Gangnam Asian BBQ Dining      4.872727          4.667679      55
+## 2             Ping Pang Pong      4.000000          3.544872       7
+## 3               Veggie House      5.000000          4.541950       2
+## 4 Kabuki Japanese Restaurant      4.000000          3.495957       3
+## 5                  Makino LV      4.857143          3.697595       7
+## 6           Tonkatsu Kiyoshi      5.000000          4.524904       3
+##   n_non_asian
+## 1        1646
+## 2         468
+## 3         441
+## 4         371
+## 5         291
+## 6         261</code></pre>
+<p>The only restaurant that has more than 10 East Asian reviews is Gangnam Asian BBQ Dining. Its rating among Asians is slightly higher.</p>
 </div>
-<div id="east-asian-users-using-pinyin-for-chinese-names" class="section level1">
-<h1>East Asian Users using pinyin for Chinese names</h1>
-<pre class="r"><code>east.asian.names = as.data.frame(c(chinese_names$name, japanese_names$name, korean_names$name), stringsAsFactors = FALSE)
+<div id="east-asian-users-using-pinyin-for-chinese-names" class="section level2">
+<h2>East Asian Users using pinyin for Chinese names</h2>
+<pre class="r"><code>east.asian.names = as.data.frame(c(chinese.names$name, japanese.names$name, korean.names$name), stringsAsFactors = FALSE)
 names(east.asian.names) = c(&quot;name&quot;)
-east_asian_users = semi_join(users, east.asian.names)</code></pre>
-<pre><code>## Joining by: &quot;name&quot;</code></pre>
-<pre class="r"><code>results = GetRestaurantsWithDiffRatings('Chinese|Korean|Japanese', 100, east.asian.names)
+east.asian.users = semi_join(users, east.asian.names, by = &quot;name&quot;)
+
+results = GetRestaurantsWithDiffRatings('Chinese|Korean|Japanese', 100, east.asian.names)
 results</code></pre>
-<pre><code>##   restaurant_names eth_ratings non_eth_ratings num_eth_reviews
+<pre><code>##   restaurant_names eth.ratings non.eth.ratings num.eth.reviews
 ## 1        Makino LV    4.777778        3.692042               9
 ## 2         Japonais    2.000000        3.532319               3
-##   num_non_eth_reviews
+##   num.non.eth.reviews
 ## 1                 289
 ## 2                 263</code></pre>
-<p>Slightly higher rating (4.87 vs 4.67) for Gangnam Asian BBQ Dining from East Asians than others in the data set.</p>
+<p>Again, nothing terribly interesting here.</p>
+</div>
 </div>
 <div id="conclusion" class="section level1">
 <h1>Conclusion</h1>
-<p>You can’t construct a good “racist Yelp” from the data provided. If we had access to last names, we might be able to include Asians or Latinos with Western first names, which may change the results.</p>
+<p>You can’t construct a good “racist Yelp” from the data provided. If we had a better way of classifying the race of users, we might be able to get better results.</p>
 <div id="restaurant-preferences" class="section level2">
 <h2>Restaurant preferences</h2>
 <p>What kind of restaurants do Latinos review? What kind of restaurants do Asians review?</p>
-<p>what’s the distribution of review count on yelp?</p>
+<p>What’s the distribution of review count on yelp?</p>
 <pre class="r"><code>bw = function(x) diff(range(x)) / (2 * IQR(x) / length(x)^(1/3))
 restaurants = businesses %&gt;% filter(grepl('Restaurants', categories)) %&gt;% arrange(desc(review_count))
 ggplot(restaurants, aes(x = review_count)) + geom_histogram()</code></pre>
 <pre><code>## `stat_bin()` using `bins = 30`. Pick better value with `binwidth`.</code></pre>
 <p><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABUAAAAPACAYAAAD0ZtPZAAAD8GlDQ1BJQ0MgUHJvZmlsZQAAOI2NVd1v21QUP4lvXKQWP6Cxjg4Vi69VU1u5GxqtxgZJk6XpQhq5zdgqpMl1bhpT1za2021Vn/YCbwz4A4CyBx6QeEIaDMT2su0BtElTQRXVJKQ9dNpAaJP2gqpwrq9Tu13GuJGvfznndz7v0TVAx1ea45hJGWDe8l01n5GPn5iWO1YhCc9BJ/RAp6Z7TrpcLgIuxoVH1sNfIcHeNwfa6/9zdVappwMknkJsVz19HvFpgJSpO64PIN5G+fAp30Hc8TziHS4miFhheJbjLMMzHB8POFPqKGKWi6TXtSriJcT9MzH5bAzzHIK1I08t6hq6zHpRdu2aYdJYuk9Q/881bzZa8Xrx6fLmJo/iu4/VXnfH1BB/rmu5ScQvI77m+BkmfxXxvcZcJY14L0DymZp7pML5yTcW61PvIN6JuGr4halQvmjNlCa4bXJ5zj6qhpxrujeKPYMXEd+q00KR5yNAlWZzrF+Ie+uNsdC/MO4tTOZafhbroyXuR3Df08bLiHsQf+ja6gTPWVimZl7l/oUrjl8OcxDWLbNU5D6JRL2gxkDu16fGuC054OMhclsyXTOOFEL+kmMGs4i5kfNuQ62EnBuam8tzP+Q+tSqhz9SuqpZlvR1EfBiOJTSgYMMM7jpYsAEyqJCHDL4dcFFTAwNMlFDUUpQYiadhDmXteeWAw3HEmA2s15k1RmnP4RHuhBybdBOF7MfnICmSQ2SYjIBM3iRvkcMki9IRcnDTthyLz2Ld2fTzPjTQK+Mdg8y5nkZfFO+se9LQr3/09xZr+5GcaSufeAfAww60mAPx+q8u/bAr8rFCLrx7s+vqEkw8qb+p26n11Aruq6m1iJH6PbWGv1VIY25mkNE8PkaQhxfLIF7DZXx80HD/A3l2jLclYs061xNpWCfoB6WHJTjbH0mV35Q/lRXlC+W8cndbl9t2SfhU+Fb4UfhO+F74GWThknBZ+Em4InwjXIyd1ePnY/Psg3pb1TJNu15TMKWMtFt6ScpKL0ivSMXIn9QtDUlj0h7U7N48t3i8eC0GnMC91dX2sTivgloDTgUVeEGHLTizbf5Da9JLhkhh29QOs1luMcScmBXTIIt7xRFxSBxnuJWfuAd1I7jntkyd/pgKaIwVr3MgmDo2q8x6IdB5QH162mcX7ajtnHGN2bov71OU1+U0fqqoXLD0wX5ZM005UHmySz3qLtDqILDvIL+iH6jB9y2x83ok898GOPQX3lk3Itl0A+BrD6D7tUjWh3fis58BXDigN9yF8M5PJH4B8Gr79/F/XRm8m241mw/wvur4BGDj42bzn+Vmc+NL9L8GcMn8F1kAcXgSteGGAABAAElEQVR4AezdDZBeVWE//rObzfsbkJAXkACBSBkLRKyEUgUx1OLQYita2xGBlGKntEVAammx+JdgaoVSYKYVkTGgoNiCDkUmqIg0ItSA4BChTHkRCJCQsCRhIS+bt5/n/r2PTzY3yd48b/fe/dyZ5bnPec6595zPuWx2v3tfurb9cgkWAgQIECBAgAABAgQIECBAgAABAgQIVFCgu4JjMiQCBAgQIECAAAECBAgQIECAAAECBAgkAgJQBwIBAgQIECBAgAABAgQIECBAgAABApUVEIBWdmoNjAABAgQIECBAgAABAgQIECBAgAABAahjgAABAgQIECBAgAABAgQIECBAgACBygoIQCs7tQZGgAABAgQIECBAgAABAgQIECBAgIAA1DFAgAABAgQIECBAgAABAgQIECBAgEBlBQSglZ1aAyNAgAABAgQIECBAgAABAgQIECBAQADqGCBAgAABAgQIECBAgAABAgQIECBAoLICAtDKTq2BESBAgAABAgQIECBAgAABAgQIECAgAHUMECBAgAABAgQIECBAgAABAgQIECBQWQEBaGWn1sAIECBAgAABAgQIECBAgAABAgQIEBCAOgYIECBAgAABAgQIECBAgAABAgQIEKisgAC0slNrYAQIECBAgAABAgQIECBAgAABAgQICEAdAwQIECBAgAABAgQIECBAgAABAgQIVFagp7IjM7A9Eli+fPketat6oxEjRoRJkyYlw3zzzTfD66+/XvUhG98QFpgyZUpYv3596OvrG8IKhl51galTp4bu7u6wZcuWsHLlyqoP1/iGsMD48ePDqFGjwqpVq4awgqFXXWDChAlh7NixyTB7e3tDf39/1YdsfENUYPjw4WHy5Mnh1VdfDZs2bRqiCoZddYH0OI/jXLduXVi7dm1tyNOnT6+t511xBmheMfUJECBAgAABAgQIECBAgAABAgQIECiNgAC0NFOlowQIECBAgAABAgQIECBAgAABAgQI5BUQgOYVU58AAQIECBAgQIAAAQIECBAgQIAAgdIICEBLM1U6SoAAAQIECBAgQIAAAQIECBAgQIBAXgEBaF4x9QkQIECAAAECBAgQIECAAAECBAgQKI2AALQ0U6WjBAgQIECAAAECBAgQIECAAAECBAjkFRCA5hVTnwABAgQIECBAgAABAgQIECBAgACB0ggIQEszVTpKgAABAgQIECBAgAABAgQIECBAgEBeAQFoXjH1CRAgQIAAAQIECBAgQIAAAQIECBAojYAAtDRTpaMECBAgQIAAAQIECBAgQIAAAQIECOQVEIDmFVOfAAECBAgQIECAAAECBAgQIECAAIHSCAhASzNVOkqAAAECBAgQIECAAAECBAgQIECAQF4BAWheMfUJECBAgAABAgQIECBAgAABAgQIECiNgAC0NFOlowQIECBAgAABAgQIECBAgAABAgQI5BUQgOYVU58AAQIECBAgQIAAAQIECBAgQIAAgdIICEBLM1U6SoAAAQIECBAgQIAAAQIECBAgQIBAXgEBaF4x9QkQIECAAAECBAgQIECAAAECBAgQKI2AALQ0U6WjBAgQIECAAAECBAgQIECAAAECBAjkFRCA5hVTnwABAgQIECBAgAABAgQIECBAgACB0ggIQEszVTpKgAABAgQIECBAgAABAgQIECBAgEBeAQFoXjH1CRAgQIAAAQIECBAgQIAAAQIECBAojYAAtDRTpaMECBAgQIAAAQIECBAgQIAAAQIECOQVEIDmFVOfAAECBAgQIECAAAECBAgQIECAAIHSCAhASzNVOkqAAAECBAgQIECAAAECBAgQIECAQF4BAWheMfUJECBAgAABAgQIECBAgAABAgQIECiNgAC0NFOlowQIECBAgAABAgQIECBAgAABAgQI5BUQgOYVU58AAQIECBAgQIAAAQIECBAgQIAAgdIICEBLM1U6SoAAAQIECBAgQIAAAQIECBAgQIBAXgEBaF4x9QkQIECAAAECBAgQIECAAAECBAgQKI2AALQ0U6WjBAgQIECAAAECBAgQIECAAAECBAjkFRCA5hVTnwABAgQIECBAgAABAgQIECBAgACB0ggIQEszVTpKgAABAgQIECBAgAABAgQIECBAgEBeAQFoXjH1CRAgQIAAAQIECBAgQIAAAQIECBAojYAAtDRTpaMECBAgQIAAAQIECBAg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wAIC0AJPjq4RIECAAAECBAgQIECAAAECBAgQINCYgAC0MT+tCRAgQIAAAQIECBAgQIAAAQIECBAosIAAtMCTo2sECBAgQIAAAQIECBAgQIAAAQIECDQmIABtzE9rAgQIECBAgAABAgQIECBAgAABAgQKLCAALfDk6BoBAgQIECBAgAABAgQIECBAgAABAo0JCEAb89OaAAECBAgQIECAAAECBAgQIECAAIECCwhACzw5ukaAAAECBAgQIECAAAECBAgQIECAQGMCAtDG/LQmQIAAAQIECBAgQIAAAQIECBAgQKDAAgLQAk+OrhEgQIAAAQIECBAgQIAAAQIECBAg0JiAALQxP60JECBAgAABAgQIECBAgAABAgQIECiwgAC0wJOjawQIECBAgAABAgQIECBAgAABAgQINCYgAG3MT2sCBAgQIECAAAECBAgQIECAAAECBAosIAAt8OToGgECBAgQIECAAAECBAgQIECAAAECjQkIQBvz05oAAQIECBAgQIAAAQIECBAgQIAAgQILCEALPDm6RoAAAQIECBAgQIAAAQIECBAgQIBAYwIC0Mb8tCZAgAABAgQIECBAgAABAgQIECBAoMACAtACT46uESBAgAABAgQIECBAgAABAgQIECDQmIAAtDE/rQkQIECAAAECBAgQIECAAAECBAgQKLCAALTAk6NrBAgQIECAAAECBAgQIECAAAECBAg0JiAAbcxPawIECBAgQIAAAQIECBAgQIAAAQIECiwgAC3w5OgaAQIECBAgQIAAAQIECBAgQIAAAQKNCQhAG/PTmgABAgQIECBAgAABAgQIECBAgACBAgsIQAs8ObpGgAABAgQIECBAgAABAgQIECBAgEBjAgLQxvy0JkCAAAECBAgQIECAAAECBAgQIECgwAIC0AJPjq4RIECAAAECBAgQIECAAAECBAgQINCYgAC0MT+tCRAgQIAAAQIECBAgQIAAAQIECBAosIAAtMCTo2sECBAgQIAAAQIECBAgQIAAAQIECDQmIABtzE9rAgQIECBAgAABAgQIECBAgAABAgQKLCAALfDk6BoBAgQIECBAgAABAgQIECBAgAABAo0JCEAb89OaAAECBAgQIECAAAECBAgQIECAAIECCwhACzw5ukaAAAECBAgQIECAAAECBAgQIECAQGMCAtDG/LQmQIAAAQIECBAgQIAAAQIECBAgQKDAAgLQAk+OrhEgQIAAAQIECBAgQIAAAQIECBAg0JiAALQxP60JECBAgAABAgQIECBAgAABAgQIECiwgAC0wJOjawQIECBAgAABAgQIECBAgAABAgQINCYgAG3MT2sCBAgQIECAAAECBAgQIECAAAECBAosIAAt8OToGgECBAgQIECAAAECBAgQIECAAAECjQkIQBvz05oAAQIECBAgQIAAAQIECBAgQIAAgQILCEALPDm6RoAAAQIECBAgQIAAAQIECBAgQIBAYwIC0Mb8tCZAgAABAgQIECBAgAABAgQIECBAoMACAtACT46uESBAgAABAgQIECBAgAABAgQIECDQmIAAtDE/rQkQIECAAAECBAgQIECAAAECBAgQKLCAALTAk6NrBAgQIECAAAECBAgQIECAAAECBAg0JiAAbcxPawIECBAgQIAAAQIECBAgQIAAAQIECiwgAC3w5OgaAQIECBAgQIAAAQIECBAgQIAAAQKNCQhAG/PTmgABAgQIECBAgAABAgQIECBAgACBAgsIQAs8ObpGgAABAgQIECBAgAABAgQIECBAgEBjAgLQxvy0JkCAAAECBAgQIECAAAECBAgQIECgwAIC0AJPjq4RIECAAAECBAgQIECAAAECBAgQINCYgAC0MT+tCRAgQIAAAQIECBAgQIAAAQIECBAosIAAtMCTo2sECBAgQIAAAQIECBAgQIAAAQIECDQmIABtzE9rAgQIECBAgAABAgQIECBAgAABAgQKLCAALfDk6BoBAgQIECBAgAABAgQIECBAgAABAo0JCEAb89OaAAECBAgQIECAAAECBAgQIECAAIECCwhACzw5ukaAAAECBAgQIECAAAECBAgQIECAQGMCAtDG/LQmQIAAAQIECBAgQIAAAQIECBAgQKDAAgLQAk+OrhEgQIAAAQIECBAgQIAAAQIECBAg0JiAALQxP60JECBAgAABAgQIECBAgAABAgQIECiwgAC0wJOjawQIECBAgAABAgQIECBAgAABAgQINCYgAG3MT2sCBAgQIECAAAECBAgQIECAAAECBAosIAAt8OToGgECBAgQIECAAAECBAgQIECAAAECjQkIQBvz05oAAQIECBAgQIAAAQIECBAgQIAAgQILCEALPDm6RoAAAQIECBAgQIAAAQIECBAgQIBAYwIC0Mb8tCZAgAABAgQIECBAgAABAgQIECBAoMACAtACT46uESBAgAABAgQIECBAgAABAgQIECDQmIAAtDE/rQkQIECAAAECBAgQIECAAAECBAgQKLCAALTAk6NrBAgQIECAAAECBAgQIECAAAECBAg0JiAAbcxPawIECBAgQIAAAQIECBAgQIAAAQIECiwgAC3w5OgaAQIECBAgQIAAAQIECBAgQIAAAQKNCQhAG/PTmgABAgQIECBAgAABAgQIECBAgACBAgsIQAs8ObpGgAABAgQIECBAgAABAgQIECBAgEBjAgLQxvy0JkCAAAECBAgQIECAAAECBAgQIECgwAI9Be6brnVAYNy4cR3Y69DbJeehN+dlGnFXV1cYPnx4cJyWadb0Na9APM7jEl8d63n11C+TwIgRI0J3d7fjvEyTpq+5BeLPLekyevToEI97C4EqCsTv53GJx/nIkSOrOERjIhCGDRtWU+jp6WnazzAC0BqrlSgwZswYEG0Q4NwGZLvYY4E0AI3/2FgIVF0gHu++J1d9lof2+OIx7jgf2sfAUBh9PMbTRSiUSnitssCoUaOqPDxjI1ATiL+T1geitQ/2YMVvt3uAVuUmK1eurPLwCjM2zoWZCh3JEJgyZUpYv3596Ovry/hUEYFqCEydOjUJhbZu3Rp8T67GnBpFtsD48eND/EV51apV2RWUEqiAwIQJE8LYsWOTkaxZsyb09/dXYFSGQGBHgXi28+TJk8Pq1avDpk2bdqyghEAFBNLjPA5lw4YNYe3atbVRTZ8+vbaed8U9QPOKqU+AAAECBAgQIECAAAECBAgQIECAQGkEBKClmSodJUCAAAECBAgQIECAAAECBAgQIEAgr4AANK+Y+gQIECBAgAABAgQIECBAgAABAgQIlEZAAFqaqdJRAgQIECBAgAABAgQIECBAgAABAgTyCghA84qpT4AAAQIECBAgQIAAAQIECBAgQIBAaQQEoKWZKh0lQIAAAQIECBAgQIAAAQIECBAgQCCvgAA0r5j6BAgQIECAAAECBAgQIECAAAECBAiURkAAWpqp0lECBAgQIECAAAECBAgQIECAAAECBPIKCEDziqlPgAABAgQIECBAgAABAgQIECBAgEBpBASgpZkqHSVAgAABAgQIECBAgAABAgQIECBAIK+AADSvmPoECBAgQIAAAQIECBAgQIAAAQIECJRGQABamqnSUQIECBAgQIAAAQIECBAgQIAAAQIE8goIQPOKqU+AAAECBAgQIECAAAECBAgQIECAQGkEBKClmSodJUCAAAECBAgQIECAAAECBAgQIEAgr4AANK+Y+gQIECBAgAABAgQIECBAgAABAgQIlEZAAFqaqdJRAgQIECBAgAABAgQIECBAgAABAgTyCghA84qpT4AAAQIECBAgQIAAAQIECBAgQIBAaQQEoKWZKh0lQIAAAQIECBAgQIAAAQIECBAgQCCvgAA0r5j6BAgQIECAAAECBAgQIECAAAECBAiURkAAWpqp0lECBAgQIECAAAECBAgQIECAAAECBPIKCEDziqlPgAABAgQIECBAgAABAgQIECBAgEBpBASgpZkqHSVAgAABAgQIECBAgAABAgQIECBAIK+AADSvmPoECBAgQIAAAQIECBAgQIAAAQIECJRGQABamqnSUQIECBAgQIAAAQIECBAgQIAAAQIE8goIQPOKqU+AAAECBAgQIECAAAECBAgQIECAQGkEBKClmSodJUCAAAECBAgQIECAAAECBAgQIEAgr4AANK+Y+gQIECBAgAABAgQIECBAgAABAgQIlEZAAFqaqdJRAgQIECBAgAABAgQIECBAgAABAgTyCghA84qpT4AAAQIECBAgQIAAAQIECBAgQIBAaQQEoKWZKh0lQIAAAQIECBAgQIAAAQIECBAgQCCvgAA0r5j6BAgQIECAAAECBAgQIECAAAECBAiURkAAWpqp0lECBAgQIECAAAECBAgQIECAAAECBPIKCEDziqlPgAABAgQIECBAgAABAgQIECBAgEBpBASgpZkqHSVAgAABAgQIECBAgAABAgQIECBAIK+AADSvmPoECBAgQIAAAQIECBAgQIAAAQIECJRGQABamqnSUQIECBAgQIAAAQIECBAgQIAAAQIE8goIQPOKqU+AAAECBAgQIECAAAECBAgQIECAQGkEBKClmSodJUCAAAECBAgQIECAAAECBAgQIEAgr4AANK+Y+gQIECBAgAABAgQIECBAgAABAgQIlEZAAFqaqdJRAgQIECBAgAABAgQIECBAgAABAgTyCghA84qpT4AAAQIECBAgQIAAAQIECBAgQIBAaQQEoKWZKh0lQIAAAQIECBAgQIAAAQIECBAgQCCvgAA0r5j6BAgQIECAAAECBAgQIECAAAECBAiURkAAWpqp0lECBAgQIECAAAECBAgQIECAAAECBPIKCEDziqlPgAABAgQIECBAgAABAgQIECBAgEBpBASgpZkqHSVAgAABAgQIECBAgAABAgQIECBAIK+AADSvmPoECBAgQIAAAQIECBAgQIAAAQIECJRGQABamqnSUQIECBAgQIAAAQIECBAgQIAAAQIE8goIQPOKqU+AAAECBAgQIECAAAECBAgQIECAQGkEBKClmSodJUCAAAECBAgQIECAAAECBAgQIEAgr4AANK+Y+gQIECBAgAABAgQIECBAgAABAgQIlEZAAFqaqdJRAgQIECBAgAABAgQIECBAgAABAgTyCghA84qpT4AAAQIECBAgQIAAAQIECBAgQIBAaQQEoKWZKh0lQIAAAQIECBAgQIAAAQIECBAgQCCvgAA0r5j6BAgQIECAAAECBAgQIECAAAECBAiURkAAWpqp0lECBAgQIECAAAECBAgQIECAAAECBPIKCEDziqlPgAABAgQIECBAgAABAgQIECBAgEBpBASgpZkqHSVAgAABAgQIECBAgAABAgQIECBAIK+AADSvmPoECBAgQIAAAQIECBAgQIAAAQIECJRGQABamqnSUQIECBAgQIAAAQIECBAgQIAAAQIE8goIQPOKqU+AAAECBAgQIECAAAECBAgQIECAQGkEBKClmSodJUCAAAECBAgQIECAAAECBAgQIEAgr4AANK+Y+gQIECBAgAABAgQIECBAgAABAgQIlEZAAFqaqdJRAgQIECBAgAABAgQIECBAgAABAgTyCghA84qpT4AAAQIECBAgQIAAAQIECBAgQIBAaQQEoKWZKh0lQIAAAQIECBAgQIAAAQIECBAgQCCvgAA0r5j6BAgQIECAAAECBAgQIECAAAECBAiURkAAWpqp0lECBAgQIECAAAECBAgQIECAAAECBPIKCEDziqlPgAABAgQIECBAgAABAgQIECBAgEBpBASgpZkqHSVAgAABAgQIECBAgAABAgQIECBAIK+AADSvmPoECBAgQIAAAQIECBAgQIAAAQIECJRGQABamqnSUQIECBAgQIAAAQIECBAgQIAAAQIE8goIQPOKqU+AAAECBAgQIECAAAECBAgQIECAQGkEBKClmSodJUCAAAECBAgQIECAAAECBAgQIEAgr4AANK+Y+gQIECBAgAABAgQIECBAgAABAgQIlEZAAFqaqdJRAgQIECBAgAABAgQIECBAgAABAgTyCghA84qpT4AAAQIECBAgQIAAAQIECBAgQIBAaQQEoKWZKh0lQIAAAQIECBAgQIAAAQIECBAgQCCvgAA0r5j6BAgQIECAAAECBAgQIECAAAECBAiURkAAWpqp0lECBAgQIECAAAECBAgQIECAAAECBPIKCEDziqlPgAABAgQIECBAgAABAgQIECBAgEBpBASgpZkqHSVAgAABAgQIECBAgAABAgQIECBAIK9AT94GZa6/bt26cNFFF4Vp06aFSy+9NHMosc6Xv/zlzM/SwlNOOSUceuih6dvkdePGjeG2224LDz/8cFi9enWYNWtWmD17djj55JPDsGHDtqubvmlXm3R/XgkQIECAAAECBAgQIECAAAECBAgMNYEhE4Bu27YtXHbZZWHp0qWhp2fnw3766aeTIHNXB0IMNusD0DVr1oRzzz03LFu2LGm2zz77hLvvvjv5euCBB8JnPvOZMGLEiO022a422+3UGwIECBAgQIAAAQIECBAgQIAAAQJDTGDnSWCFINavXx+uueaa8OMf/3i3o3rqqaeSOu94xzvCe9/73sz68ezO+mX+/PlJ+Dlnzpzwj//4j2HixInhpZdeCpdccklYvHhxuPbaa5MzTzvRpn6f1gkQIECAAAECBAgQIECAAAECBAgMNYHK3wM0XpJ+xhlnhLvuuit0d+9+uGkAGsPPU089NfNrv/32qx0nTzzxRFiyZEkYPXp0uPzyy5PwM364//77h6uuuiq5/H3RokWhr6+v7W1qO7RCgAABAgQIECBAgAABAgQIECBAYIgK7D4RLDHM97///XDBBReEFStWhHh25oUXXrjb0cRL4ONy2GGH7bZurHDfffcl9U444YQwatSoZD39T7wU/phjjgn9/f0hhqDp0q426f68EiBAgAABAgQIECBAgAABAgQIEBiqApUOQF977bUQz9a8+OKLwxVXXBH23nvvXc7z5s2bw7PPPpvcI3TmzJlJ3ddffz3EhxXtbHn88ceTj2LAmrXEADQujz32WO3jdrWp7dAKAQIECBAgQIAAAQIECBAgQIAAgSEqUOl7gM6dOzecdtppu3zoUf28P//882HTpk1hxowZ4etf/3r49re/HXp7e5NL52PZxz72sfC+972vvklyr89YsNdee21Xnr5Jy9MHJMXy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QIAAAQIECBAgQIAAAQIECBDIFBCAZrIoJECAAAECBAgQIECAAAECBAgQIECgCgIC0CrMojEQIECAAAECBAgQIECAAAECBAgQIJApIADNZFFIgAABAgQIECBAgAABAgQIECBAgEAVBASgVZhFYyBAgAABAgQIECBAgAABAgQIECBAIFNAAJrJopAAAQIECBAgQIAAAQIECBAgQIAAgSoICECrMIvGQIAAAQIECBAgQIAAAQIECBAgQIBApoAANJNFIQECBAgQIECAAAECBAgQIECAAAECVRAQgFZhFo2BAAECBAgQIECAAAECBAgQIECAAIFMAQFoJotCAgQIECBAgAABAgQIECBAgAABAgSqICAArcIsGgMBAgQIECBAgAABAgQIECBAgAABApkCAtBMFoUECBAgQIAAAQIECBAgQIAAAQIECFRBQABahVk0BgIECBAgQIAAAQIECBAgQIAAAQIEMgUEoJksCgkQIECAAAECBAgQIECAAAECBAgQqIKAALQKs2gMBAgQIECAAAECBAgQIECAAAECBAhkCghAM1kUEiBAgAABAgQIECBAgAABAgQIECBQBQEBaBVm0RgIECBAgAABAgQIECBAgAABAgQIEMgUEIBmsigkQIAAAQIECBAgQIAAAQIECBAgQKAKAgLQKsyiMRAgQIAAAQIECBAgQIAAAQIECBAgkCkgAM1kUUiAAAECBAgQIECAAAECBAgQIECAQBUEBKBVmEVjIECAAAECBAgQIECAAAECBAgQIEAgU0AAmsmikAABAgQIECBAgAABAgQIECBAgACBKggIQKswi8ZAgAABAgQIECBAgAABAgQIECBAgECmgAA0k0UhAQIECBAgQIAAAQIECBAgQIAAAQJVEBCAVmEWjYEAAQIECBAgQIAAAQIECBAgQIAAgUwBAWgmi0ICBAgQIECAAAECBAgQIECAAAECBKogIACtwiwaAwECBAgQIECAAAECBAgQIECAAAECmQIC0EwWhQQIECBAgAABAgQIECBAgAABAgQIVEFAAFqFWTQGAgQIECBAgAABAgQIECBAgAABAgQyBQSgmSwKCRAgQIAAAQIECBAgQIAAAQIECBCogoAAtAqzaAwECBAgQIAAAQIECBAgQIAAAQIECGQKCEAzWRQSIECAAAECBAgQIECAAAECBAgQIFAFAQFoFWbRGAgQIECAAAECBAgQIECAAAECBAgQyBQQgGayKCRAgAABAgQIECBAgAABAgQIECBAoAoCAtAqzKIxECBAgAABAgQIECBAgAABAgQIECCQKSAAzWRRSIAAAQIECBAgQIAAAQIECBAgQIBAFQQEoFWYRWMgQIAAAQIECBAgQIAAAQIECBAgQCBTQACayaKQAAECBAgQIECAAAECBAgQIECAAIEqCAhAqzCLxkCAAAECBAgQIECAAAECBAgQIECAQKaAADSTRSEBAgQIECBAgAABAgQIECBAgAABAlUQEIBWYRaNgQABAgQIECBAgAABAgQIECBAgACBTAEBaCaLQgIECBAgQIAAAQIECBAgQIAAAQIEqiAgAK3CLBoDAQIECBAgQIAAAQIECBAgQIAAAQKZAgLQTBaFBAgQIECAAAECBAgQIECAAAECBAhUQUAAWoVZNAYCBAgQIECAAAECBAgQIECAAAECBDIFBKCZLAoJECBAgAABAgQIECBAgAABAgQIEKiCgAC0CrNoDAQIECBAgAABAgQIECBAgAABAgQIZAoIQDNZFBIgQIAAAQIECBAgQIAAAQIECBAgUAUBAWgVZtEYCBAgQIAAAQIECBAgQIAAAQIECBDIFBCAZrIoJECAAAECBAgQIECAAAECBAgQIECgCgIC0CrMojEQIECAAAECBAgQIECAAAECBAgQIJApIADNZFFIgAABAgQIECBAgAABAgQIECBAgEAVBASgVZhFYyBAgAABAgQIECBAgAABAgQIECBAIFNAAJrJopAAAQIECBAgQIAAAQIECBAgQIAAgSoICECrMIvGQIAAAQIECBAgQIAAAQIECBAgQIBApoAANJNFIQECBAgQIECAAAECBAgQIECAAAECVRAQgFZhFo2BAAECBAgQIECAAAECBAgQIECAAIFMAQFoJotCAgQIECBAgAABAgQIECBAgAABAgSqICAArcIsGgMBAgQIECBAgAABAgQIECBAgAABApkCAtBMFoUECBAgQIAAAQIECBAgQIAAAQIECFRBQABahVk0BgIECBAgQIAAAQIECBAgQIAAAQIEMgUEoJksCgkQIECAAAECBAgQIECAAAECBAgQqIKAALQKs2gMBAgQIECAAAECBAgQIECAAAECBAhkCghAM1kUEiBAgAABAgQIECBAgAABAgQIECBQBQEBaBVm0RgIECBAgAABAgQIECBAgAABAgQIEMgUEIBmsigkQIAAAQIECBAgQIAAAQIECBAgQKAKAgLQKsyiMRAgQIAAAQIECBAgQIAAAQIECBAgkCkgAM1kUUiAAAECBAgQIECAAAECBAgQIECAQBUEeqowCGNonkBXV1fzNmZLOxXgvFMaHxRIwHFaoMnQlZYKONZbymvjHRZIj+/0tcPdsXsCLRGoP77jev37luzQRgl0WMBx3uEJsPuWCgz8Hj7w/Z7uvGvbL5c9bawdgbIInHzyyYXq6t13312o/ugMAQIECBAgQIAAAQIECBAgQKCqAs4ArerM7uG4Vq9evYctNcsjwDmPlrrtFpg4cWLo7+8P69evb/eu7Y9A2wTicd7d3R22bt0a1q5d27b92hGBdguMHj06DB8+PLz++uvt3rX9EWibwJgxY8LIkSOT/fX19YXNmze3bd92RKCdAsOGDQsTJkxIvqdv2bKlnbu2LwJtE+jp6Qnjx49P9rdx48awbt262r733nvv2nreFQFoXrGK19+wYUPFR1iM4XEuxjzoRbZA/KEq/uLgOM32UVoNgRiAxiVeCONYr8acGkW2QAw/4y8SjvNsH6XVEBgxYkQtAI1/xI1fFgJVFIjf0+MSj/FNmzZVcYjGRCD5w20agMagv1k/w3gIkoOLAAECBAgQIECAAAECBAgQIECAAIHKCghAKzu1BkaAAAECBAgQIECAAAECBAgQIECAgADUMUCAAAECBAgQIECAAAECBAgQIECAQGUFBKCVnVoDI0CAAAECBAgQIECAAAECBAgQIEBAAOoYIECAAAECBAgQIECAAAECBAgQIECgsgIC0MpOrYERIECAAAECBAgQIECAAAECBAgQICAAdQwQIECAAAECBAgQIECAAAECBAgQIFBZAQFoZafWwAgQIECAAAECBAgQIECAAAECBAgQEIA6BggQIECAAAECBAgQIECAAAECBAgQqKyAALSyU2tgBAgQIECAAAECBAgQIECAAAECBAgIQB0DBAgQIECAAAECBAgQIECAAAECBAhUVkAAWtmpNTACBAgQIECAAAECBAgQIECAAAECBASgjgECBAgQIECAAAECBAgQIECAAAECBCorIACt7NQaGAECBAgQIECAAAECBAgQIECAAAECAlDHAAECBAgQIECAAAECBAgQIECAAAEClRUQgFZ2ag2MAAECBAgQIECAAAECBAgQIECAAAEBqGOAAAECBAgQIECAAAECBAgQIECAAIHKCghAKzu1BkaAAAECBAgQIECAAAECBAgQIECAgADUMUCAAAECBAgQIECAAAECBAgQIECAQGUFBKCVnVoDI0CAAAECBAgQIECAAAECBAgQIEBAAOoYIECAAAECBAgQIECAAAECBAgQIECgsgIC0MpOrYERIECAAAECBAgQIECAAAECBAgQICAAdQwQIECAAAECBAgQIECAAAECBAgQIFBZAQFoZafWwAgQIECAAAECBAgQIECAAAECBAgQEIA6BggQIECAAAECBAgQIECAAAECBAgQqKyAALSyU2tgBAgQIECAAAECBAgQIECAAAECBAgIQB0DBAgQIECAAAECBAgQIECAAAECBAhUVkAAWtmpNTACBAgQIECAAAECBAgQIECAAAECBASgjgECBAgQIECAAAECBAgQIECAAAECBCorIACt7NQaGAECBAgQIECAAAECBAgQIECAAAECAlDHAAECBAgQIECAAAECBAgQIECAAAEClRUQgFZ2ag2MAAECBAgQIECAAAECBAgQIECAAIG2BKAvvPBCOP/888NVV101aPEnnngifOADHwhvfetbw8aNGwfdTkUCBAgQIECAAAECBAgQIECAAAECBAikAm0JQF955ZVwzTXXhG984xvpfnf72tvbG/7rv/4rPPXUU+HFF1/cbX0VCBAgQIAAAQIECBAgQIAAAQIECBAgMFCgLQHowJ3u7v0bb7yRhJ9pvTFjxqSrXgkQIECAAAECBAgQIECAAAECBAgQIDBogZ5B1xxkxQceeCDMnTs3bNu2rdYiXf/pT38aRo0aVSvPWol1+/v7ax/tt99+Yfr06bX3VggQIECAAAECBAgQIECAAAECBAgQIDBYgaafAXrccceFD33oQ8l9O+O9O+NXGmjGcDMt29lrWjcOoKurK1xyySWDHYt6BAgQIECAAAECBAgQIECAAAECBAgQ2E6g6WeAxq1feeWVYdy4cbWzQFetWhW+9a1vhX333Td88IMf3K4DA990d3eH0aNHh7322iuccMIJ4fjjjx9YxXsCBAgQIECAAAECBAgQIECAAAECBAgMSqAlAejUqVPDF7/4xVoHHnrooSQAPfDAA8N1111XK7dCgAABAgQIECBAgAABAgQIECBAgACBVgq0JAAd2OH9998/XH755e7lORDGewIECBAgQIAAAQIECBAgQIAAAQIEWirQlgA0PsjIvTxbOo82ToAAAQIECBAgQIAAAQIECBAgQIBAhkBbAtD6/W7dujUsXbo0xPuCxgcepU+Ir68zcP2UU04ZWOQ9AQIECBAgQIAAAQIECBAgQIAAAQIEdivQ1gD0mmuuCVdffXV47rnndtux+gqDCUnr61snQIAAAQIECBAgQIAAAQIECBAgQIBAFGhbAHr99deH888/nzoBAgQIECBAgAABAgQIECBAgAABAgTaJtCWALS3tzd84hOfqA3qzDPPDEcddVQ46KCDwujRo2vlVggQIECAAAECBAgQIECAAAECBAgQINBMgbYEoA8//HDYsGFD0u+FCxeGs846q5ljsC0CBAgQIECAAAECBAgQIECAAAECBAhkCnRnlja58JFHHkm2OHny5BDP/rQQIECAAAECv8ILUgAAQABJREFUBAgQIECAAAECBAgQIECgHQJtCUAnTJiQjGX27Nmhq6urHeOyDwIECBAgQIAAAQIECBAgQIAAAQIECIS2BKC//du/nVDnffq7+SFAgAABAgQIECBAgAABAgQIECBAgEAjAm0JQI888sgwadKk8PTTT4f77ruvkf5qS4AAAQIECBAgQIAAAQIECBAgQIAAgUELtCUA7enpCXfccUfyxPd58+YJQQc9PSoSIECAAAECBAgQIECAAAECBAgQINCIQFueAt/X1xf6+/vDX/3VX4Urr7wynHjiieGd73xnmDlzZpgxY0YYOXLkLscwf/78XX7uQwIECBAgQIAAAQIECBAgQIAAAQIECGQJtCUAffLJJ8N73/ve7fb/0EMPhfg1mEUAOhgldQgQIECAAAECBAgQIECAAAECBAgQGCjQlkvgB+7UewIECBAgQIAAAQIECBAgQIAAAQIECLRDoC1ngB599NFh9erV7RiPfRAgQIAAAQIECBAgQIAAAQIECBAgQKAm0JYAdNiwYWGvvfaq7dQKAQIECBAgQIAAAQIECBAgQIAAAQIE2iHgEvh2KNsHAQIECBAgQIAAAQIECBAgQIAAAQIdEWjLGaBvvvlmeOKJJ/Z4gPGJ8RYCBAgQIECAAAECBAgQIECAAAECBAjkFWhLABrDz2OOOSZv32r1t23bVlu3QoAAAQIECBAgQIAAAQIECBAgQIAAgcEKuAR+sFLqESBAgAABAgQIECBAgAABAgQIECBQOoG2nAE6c+bMcNNNN+0SZ/369aG3tzcsWbIk3HnnnWH48OHhW9/6VohPkLcQIECAAAECBAgQIECAAAECBAgQIEBgTwTaEoBOmjQpnHHGGYPu3+233x5OP/30MG/evHD//feHadOmDbqtigQIECBAgAABAgQIECBAgAABAgQIEEgFCnkJ/GmnnRauvPLKsHLlynD22WenffVKgAABAgQIECBAgAABAgQIECBAgACBXAKFDEDjCH7/938/GchPfvKTsGHDhlyDUpkAAQIECBAgQIAAAQIECBAgQIAAAQJRoLAB6IwZM8L48eNDf39/eOihh8wWAQIECBAgQIAAAQIECBAgQIAAAQIEcgsUNgB95JFHQl9fXzKgnp623Ko0N54GBAgQIECAAAECBAgQIECAAAECBAgUW6CQAeiaNWvCZZddlsjF8HP27NnFVtQ7AgQIECBAgAABAgQIECBAgAABAgQKKdCWUytXrFgRbr755l0CbN26Nbncvbe3N9x6660htonLiSeeGEaPHr3Ltj4kQIAAAQIECBAgQIAAAQIECBAgQIBAlkBbAtBly5aFv/3bv83a/y7LJk2aFL7yla/sso4PCRAgQIAAAQIECBAgQIAAAQIECBAgsDOBQl4CP27cuPDxj388/OhHPwpvectbdtZ35QQIECBAgAABAgQIECBAgAABAgQIENilQFvOAD3qqKPCc889t8uOxA+7u7uTy93jmZ9dXV27ra8CAQIECBAgQIAAAQIECBAgQIAAAQIEdiXQlgB0xIgR4cADD9xVP3xGgAABAgQIECBAgAABAgQIECBAgACBpgu0JQDdWa+3bdsW4v1B44OPJk+eHPbdd98watSonVVXToAAAQIECBAgQIAAAQIECBAgQIAAgVwCbb8H6ObNm8OVV14Z3v72t4d4r894ZujRRx8dZsyYEcaMGROOO+64cM0114SNGzfmGojKBAgQIECAAAECBAgQIECAAAECBAgQGCjQ1jNAlyxZEs4+++zw85//fGA/kvfxjNAHH3ww+brxxhvD7bffHmbOnJlZVyEBAgQIECBAgAABAgQIECBAgAABAgR2J9C2AHTVqlXhD/7gD8LKlSuTPu2///7hXe96Vzj44IPDPvvsE1588cXkQUk/+MEPwptvvhl+9rOfhVNPPTXE0DSe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dP3y8fLb2jHeN954I8TLxR9//PHa7rq7u5OgcZ999gkrVqwIr776au2zuDJv3rzwla98Zbuydr7p7e1NLsOPDzqKgWjs7+6WIrfZXd/j58uXLx9MtdLVicdSkZaFCxcWqTv6QmA7gfg9b/369aGvr2+7cm8IVElg6tSpyb/r8aqTeIWKhUBVBcaPHx/i/fRXrVpV1SEaF4EwYcKEMHbs2EQi/j7W399PhUAlBeJVqZMnT06yk02bNlVyjAZFID3Oo8S6devC2rVrayjTp0+vreddacsl8LFT48aNC//93/8dLrzwwvDVr3416Wd8sNDLL7+cfNV3PJ4xetlll4W/+Iu/qC9u+3rsR/zKsxS5TZ5xqEuAAAECBAgQIECAAAECBAgQIECgCgJtC0AjVgwHb7rppvDpT3863HHHHcml5fHMz3iW0YwZM8Khhx4a3vrWt4Y//dM/DXvvvXcVfI2BAAECBAgQIECAAAECBAgQIECAAIEOCrQ1AE3HGR8sdNFFF6VvvRIgQIAAAQIECBAgQIAAAQIECBAgQKAlAru/qWVLdmujBAgQIECAAAECBAgQIECAAAECBAgQaL2AALT1xvZAgAABAgQIECBAgAABAgQIECBAgECHBASgHYK3WwIECBAgQIAAAQIECBAgQIAAAQIEWi8gAG29sT0QIECAAAECBAgQIECAAAECBAgQINAhAQFoh+DtlgABAgQIECBAgAABAgQIECBAgACB1gsIQFtvbA8ECBAgQIAAAQIECBAgQIAAAQIECHRIQADaIXi7JUCAAAECBAgQIECAAAECBAgQIECg9QIC0NYb2wMBAgQIECBAgAABAgQIECBAgAABAh0SEIB2CN5uCRAgQIAAAQIECBAgQIAAAQIECBBovYAAtPXG9kCAAAECBAgQIECAAAECBAgQIECAQIcEBKAdgrdbAgQIECBAgAABAgQIECBAgAABAgRaLyAAbb2xPRAgQIAAAQIECBAgQIAAAQIECBAg0CEBAWiH4O2WAAECBAgQIECAAAECBAgQIECAAIHWCwhAW29sDwQIECBAgAABAgQIECBAgAABAgQIdEhAANoheLslQIAAAQIECBAgQIAAAQIECBAgQKD1AgLQ1hvbAwECBAgQIECAAAECBAgQIECAAAECHRIQgHYI3m4JECBAgAABAgQIECBAgAABAgQIEGi9gAC09cb2QIAAAQIECBAgQIAAAQIECBAgQIBAhwQEoB2Ct1sCBAgQIECAAAECBAgQIECAAAECBFovIABtvbE9ECBAgAABAgQIECBAgAABAgQIECDQIQEBaIfg7ZYAAQIECBAgQIAAAQIECBAgQIAAgdYLCEBbb2wPBAgQIECAAAECBAgQIECAAAECBAh0SEAA2iF4uyVAgAABAgQIECBAgAABAgQIECBAoPUCAtDWG9sDAQIECBAgQIAAAQIECBAgQIAAAQIdEhCAdgjebgkQIECAAAECBAgQIECAAAECBAgQaL2AALT1xvZAgAABAgQIECBAgAABAgQIECBAgECHBASgHYK3WwIECBAgQIAAAQIECBAgQIAAAQIEWi8gAG29sT0QIECAAAECBAgQIECAAAECBAgQINAhAQFoh+DtlgABAgQIECBAgAABAgQIECBAgACB1gsIQFtvbA8ECBAgQIAAAQIECBAgQIAAAQIECHRIQADaIXi7JUCAAAECBAgQIECAAAECBAgQIECg9QIC0NYb2wMBAgQIECBAgAABAgQIECBAgAABAh0SEIB2CN5uCRAgQIAAAQIECBAgQIAAAQIECBBovYAAtPXG9kCAAAECBAgQIECAAAECBAgQIECAQIcEBKAdgrdbAgQIECBAgAABAgQIECBAgAABAgRaLyAAbb2xPRAgQIAAAQIECBAgQIAAAQIECBAg0CEBAWiH4O2WAAECBAgQIECAAAECBAgQIECAAIHWCwhAW29sDwQIECBAgAABAgQIECBAgAABAgQIdEhAANoheLslQIAAAQIECBAgQIAAAQIECBAgQKD1AgLQ1hvbAwECBAgQIECAAAECBAgQIECAAAECHRIQgHYI3m4JECBAgAABAgQIECBAgAABAgQIEGi9gAC09cb2QIAAAQIECBAgQIAAAQIECBAgQIBAhwQEoB2Ct1sCBAgQIECAAAECBAgQIECAAAECBFovIABtvbE9ECBAgAABAgQIECBAgAABAgQIECDQIQEBaIfg7ZYAAQIECBAgQIAAAQIECBAgQIAAgdYLCEBbb2wPBAgQIECAAAECBAgQIECAAAECBAh0SEAA2iF4uyVAgAABAgQIECBAgAABAgQIECBAoPUCAtDWG9sDAQIECBAgQIAAAQIECBAgQIAAAQIdEhCAdgjebgkQIECAAAECBAgQIECAAAECBAgQaL2AALT1xvZAgAABAgQIECBAgAABAgQIECBAgECHBASgHYK3WwIECBAgQIAAAQIECBAgQIAAAQIEWi8gAG29sT0QIECAAAECBAgQIECAAAECBAgQINAhAQFoh+DtlgABAgQIECBAgAABAgQIECBAgACB1gsIQFtvbA8ECBAgQIAAAQIECBAgQIAAAQIECHRIQADaIXi7JUCAAAECBAgQIECAAAECBAgQIECg9QIC0NYb2wMBAgQIECBAgAABAgQIECBAgAABAh0SEIB2CN5uCRAg8P/auxMwOao6AeAvN5AAIYmA3FcExCOCEDxRQEVdPPgWb8WIfCrfqivLeiwICpjF1cVjdRePFVE5FBUVIdFFYBFBEcQFAREIR+SKhIQkBHIx2/+CanpmqieT6e6Z6prf+75JV79Xr+rV73V6uv/z6j0CBAgQIECAAAECBAgQIECAQOcFBEA7b+wMBAgQIECAAAECBAgQIECAAAECBAiMkIAA6AjBOy0BAgQIECBAgAABAgQIECBAgAABAp0XEADtvLEzECBAgAABAgQIECBAgAABAgQIECAwQgICoCME77QECBAgQIAAAQIECBAgQIAAAQIECHReQAC088bOQIAAAQIECBAgQIAAAQIECBAgQIDACAkIgI4QvNMSIECAAAECBAgQIECAAAECBAgQINB5AQHQzhs7AwECBAgQIECAAAECBAgQIECAAAECIyQgADpC8E5LgAABAgQIECBAgAABAgQIECBAgEDnBQRAO2/sDAQIECBAgAABAgQIECBAgAABAgQIjJCAAOgIwTstAQIECBAgQIAAAQIECBAgQIAAAQKdFxAA7byxMxAgQIAAAQIECBAgQIAAAQIECBAgMEICAqAjBO+0BAgQIECAAAECBAgQIECAAAECBAh0XkAAtPPGzkCAAAECBAgQIECAAAECBAgQIECAwAgJCICOELzTEiBAgAABAgQIECBAgAABAgQIECDQeQEB0M4bOwMBAgQIECBAgAABAgQIECBAgAABAiMkIAA6QvBOS4AAAQIECBAgQIAAAQIECBAgQIBA5wUEQDtv7AwECBAgQIAAAQIECBAgQIAAAQIECIyQgADoCME7LQECBAgQIECAAAECBAgQIECAAAECnRcQAO28sTMQIECAAAECBAgQIECAAAECBAgQIDBCAgKgIwTvtAQIECBAgAABAgQIECBAgAABAgQIdF5AALTzxs5AgAABAgQIECBAgAABAgQIECBAgMAICYwfofM6bUkFpk6dWtKWVatZnKvVn1W7mrFjx6ZJkyalcePGVe3SXA+BusCYMWOy7Xi9e0+us9iooMD48eOT13kFO9Yl9RKYMGFC/fmUKVPS448/Xn9ug0CVBPLPL/E67+npqdKluRYCdYH43JKniRMntu2zugBoruoxExDwGJ4XAufhcXaWoQvELx2v06H7qdldAl7r3dVfWrthAvF+Hl+Yvc43zM3e3SWQB4Wi1flrvruuQGsJDE4gf63He7oA6ODM7NV9AvnrPFrezs8wAqDd91roaIsXL17c0eM7+BMCnL0Syiyw5ZZbpkcffTQtX768zM3UNgItCWy11VbZB6oYJeQ9uSVKlUsusOmmm6aNNtrI67zk/aR5rQlsttlmafLkydlBli1bllavXt3aAdUmUFKBGO08Y8aM9PDDD6c1a9aUtJWaRaA1gfx1HkdZtWpV9nrPj/j0pz8939zgx6fGlW5wVRUIECBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCgABoC3iqEiBAgAABAgQIECBAgAABAgQIECBQbgEB0HL3j9YRIECAAAECBAgQIECAAAECBAgQINCCwPgW6lay6sqVK9M3vvGNAa/tta99bdptt9167bNq1ar0wx/+MF1zzTVpyZIlaebMmWnWrFnpkEMOSePGjeu1b/5kuOrk5/NIgAABAgQIECBAgAABAgQIECBAYLQJCID26fHbbrstC2T2ye71NAKbjQHQpUuXpqOPPjotXLgw22/atGlp/vz52c+VV16ZTjzxxDRx4sRexxiuOr1O6gkBAgQIECBAgAABAgQIECBAgACBUSYgANqnw2+99dYsZ5999kkHHnhgn9InnsbozsZ08sknZ8HP2bNnp09+8pNp8803T/fcc0867rjj0uWXX56+/OUvp2OPPbaxShquOr1O6gkBAgQIECBAgAABAgQIECBAgACBUSZgDtA+HZ4HQCP4+brXva7wZ5tttqnXuummm9LVV1+dNt5443TKKadkwc8o3HbbbdNpp52W3f4+b968tHz58mGvUz+hDQIECBAgQIAAAQIECBAgQIAAAQKjVEAAtE/Hxy3wkXbfffc+JcVPL7vssqzggAMOSBtttFGvneJW+P322y+tXr06RRA0T8NVJz+fRwIECBAgQIAAAQIECBAgQIAAAQKjVUAAtKHn165dmxYsWJDGjx+fdtlll6xk2bJlKRYrapZuvPHGrChufy9KEQCNdP3119eLh6tO/YQ2CBAgQIAAAQIECBAgQIAAAQIECIxSAXOANnT8XXfdldasWZN22GGHdPbZZ6fzzz8/LV68OI0dOzbLe+c735le+cpXNtRI2VyfkTF16tRe+fmTPD9fICnyY37QSHlZ9qThnzy/1ToNh6xvPvDAA+mxxx6rP2/c2GyzzZquWN+4n+3WBcaNG9f6QRyBQAcFxowZ4/2gg74OXR4Br/Xy9IWWdEYgXuORfPbojK+jlkMgf51Ha+K7m9d7OfpFK9ovEK/vSF7n7bd1xPIINL6Ht/OzugBoQx/n83/efffd6Zvf/GaaMWNGisWQ7rzzzuwnFi76wx/+kD7+8Y/Xaz3yyCPZdh60rBc8uRFBxUj5fo3bna6TnbjPP8ccc0y65ppr+uQ+8XTOnDm9rq1wJ5ltEdhyyy3bchwHIdApgcmTJ6f4kQhUXSC+QHhPrnovu74Q8Dr3OhgtAltsscVouVTXOYoFYro9icBoEIj1duKnHUkAtEExn/9z0003TXPnzk2zZs3KSnt6erLRoF/84hfThRdemPbff//0spe9LD3++OP10ZRRpyhNmTIly85vox+uOkVtkUeAAAECBAgQIECAAAECBAgQIEBgtAkIgDb0+BFHHJEOOuigbCX3xpXeY8jtYYcdlo0Cjdviv/e972UB0Bg1EpHoRx99tOk8oXngc+LEidmZhqtOw2X12nze857XdFTXbrvtVg/o9qrkSdsFmk1D0PYTOSCBIQhMmjQprVu3LsW8yBKBqgrE6zx+v8cfOfPf1VW9Vtc1ugVibvv4/BmLckoEqioQr/P4iRSv9Rh0IhGookC8n0dsweu8ir3rmnKB+Iwen9UjxXfSxu+lfRcfz+sM5lEAtEEpRnHuueeeDTm9Nw8++OBsJOgdd9yR/VKNN5+4TT7m6ly+fHnvnZ98luc33ko6XHWKGnTssccWZdfz7rvvvvq2jc4JLFmypHMHd2QCLQrEbZIRpM/fv1o8nOoESimw1VZbZQHQ+JLsPbmUXaRRbRKIz7fxZcHrvE2gDlNKgZh2LA+AxucXAf9SdpNGtUFgwoQJWQwiFmuO9UskAlUUiNd5HgCN9/OHH364fplPf/rT69sbumEV+A0Qiy9LkaID8jk9I5gZqVmgIN6YIjXORTNcdbIT+4cAAQIECBAgQIAAAQIECBAgQIDAKBYQAG3o/PPOOy+dfvrp2a3uDdn1zVhBPVL8hTGf8zOfUH7BggX1/Ro38vzGkaXDVaexHbYJECBAgAABAgQIECBAgAABAgQIjEYBAdCGXr/44ovTWWedlc4888yG3Kc2r7jiiuzJXnvtVc+MOUMjRd2+KW6ru+SSS7LsfEGleDJcdfq2x3MCBAgQIECAAAECBAgQIECAAAECo01AALShx1/+8pdnzyJoefvttzeUpHTttdemGCEa6cgjj6yXxYrwO+20U7r11lvTvHnz6vmxEcHUxYsXpx133DHNnj27XjZcdeontEGAAAECBAgQIECAAAECBAgQIEBglApYBKmh4w8//PB05ZVXpuuuuy69+93vTvvss0/2c9ttt6VLL7002/Poo49Ou+++e71WrE511FFHpRNOOCHNnTs3XXXVVWnmzJnphhtuyLZj8taPfvSj2UILeaXhqpOfzyMBAgQIECBAgAABAgQIECBAgACB0SowpqeWRuvFF113rHwcIzfPPvvsXqsHbr/99ulDH/pQitGbRSmCphEAvf/+++vFMTL0Ix/5SNp7773reY0bw1Wn8Zzr267qKvBz5sxZ36UPa/kZZ5wxrOdzMgIbIhDzFD/66KNNF3fbkGPZl0BZBWJhw7Fjx6Z169alRYsWlbWZ2kWgZYF8Ffi//e1vLR/LAQiUVSDWaJg8eXLWvLgDzyrwZe0p7WpVIF8F/sEHH7QKfKuY6pdWIH+dRwNXrlzZtlXgBUCbdPnatWvTvffem5YuXZp22WWXNGXKlCZ79s6OX7gLFy5MEUDYeuutsy9Xvffo/2y46vQ/c/8cAdD+Jp3IEQDthKpjtktAALRdko5TZgEB0DL3jra1U0AAtJ2ajlVWAQHQsvaMdrVbIA8MCYC2W9bxyiSQv86jTe0MgLoFvkkvjx8/Pu2www7ZT5NdCrOnT5+e4mdD0nDV2ZA22ZcAAQIECBAgQIAAAQIECBAgQIBAFQQsglSFXnQNBAgQIECAAAECBAgQIECAAAECBAgUCgiAFrLIJECAAAECBAgQIECAAAECBAgQIECgCgICoFXoRddAgAABAgQIECBAgAABAgQIECBAgEChgABoIYtMAgQIECBAgAABAgQIECBAgAABAgSqICAAWoVedA0ECBAgQIAAAQIECBAgQIAAAQIECBQKCIAWssgkQIAAAQIECBAgQIAAAQIECBAgQKAKAgKgVehF10CAAAECBAgQIECAAAECBAgQIECAQKGAAGghi0wCBAgQIECAAAECBAgQIECAAAECBKogIABahV50DQQIECBAgAABAgQIECBAgAABAgQIFAoIgBayyCRAgAABAgQIECBAgAABAgQIECBAoAoCAqBV6EXXQIAAAQIECBAgQIAAAQIECBAgQIBAoYAAaCGLTAIECBAgQIAAAQIECBAgQIAAAQIEqiAgAFqFXnQNBAgQIECAAAECBAgQIECAAAECBAgUCgiAFrLIJECAAAECBAgQIECAAAECBAgQIECgCgICoFXoRddAgAABAgQIECBAgAABAgQIECBAgEChgABoIYtMAgQIECBAgAABAgQIECBAgAABAgSqICAAWoVedA0ECBAgQIAAAQIECBAgQIAAAQIECBQKCIAWssgkQIAAAQIECBAgQIAAAQIECBAgQKAKAgKgVehF10CAAAECBAgQIECAAAECBAgQIECAQKGAAGghi0wCBAgQIECAAAECBAgQIECAAAECBKogIABahV50DQQIECBAgAABAgQIECBAgAABAgQIFAoIgBayyCRAgAABAgQIECBAgAABAgQIECBAoAoCAqBV6EXXQIAAAQIECBAgQIAAAQIECBAgQIBAoYAAaCGLTAIECBAgQIAAAQIECBAgQIAAAQIEqiAgAFqFXnQNBAgQIECAAAECBAgQIECAAAECBAgUCgiAFrLIJECAAAECBAgQIECAAAECBAgQIECgCgICoFXoRddAgAABAgQIECBAgAABAgQIECBAgEChgABoIYtMAgQIECBAgAABAgQIECBAgAABAgSqICAAWoVedA0ECBAgQIAAAQIECBAgQIAAAQIECBQKCIAWssgkQIAAAQIECBAgQIAAAQIECBAgQKAKAgKgVehF10CAAAECBAgQIECAAAECBAgQIECAQKGAAGghi0wCBAgQIECAAAECBAgQIECAAAECBKogIABahV50DQQIECBAgAABAgQIECBAgAABAgQIFAoIgBayyCRAgAABAgQIECBAgAABAgQIECBAoAoCAqBV6EXXQIAAAQIECBAgQIAAAQIECBAgQIBAoYAAaCGLTAIECBAgQIAAAQIECBAgQIAAAQIEqiAgAFqFXnQNBAgQIECAAAECBAgQIECAAAECBAgUCgiAFrLIJECAAAECBAgQIECAAAECBAgQIECgCgICoFXoRddAgAABAgQIECBAgAABAgQIECBAgEChgABoIYtMAgQIECBAgAABAgQIECBAgAABAgSqICAAWoVedA0ECBAgQIAAAQIECBAgQIAAAQIECBQKCIAWssgkQIAAAQIECBAgQIAAAQIECBAgQKAKAgKgVehF10CAAAECBAgQIECAAAECBAgQIECAQKGAAGghi0wCBAgQIECAAAECBAgQIECAAAECBKogIABahV50DQQIECBAgAABAgQIECBAgAABAgQIFAoIgBayyCRAgAABAgQIECBAgAABAgQIECBAoAoCAqBV6EXXQIAAAQIECBAgQIAAAQIECBAgQIBAoYAAaCGLTAIECBAgQIAAAQIECBAgQIAAAQIEqiAgAFqFXnQNBAgQIECAAAECBAgQIECAAAECBAgUCgiAFrLIJECAAAECBAgQIECAAAECBAgQIECgCgICoFXoRddAgAABAgQIECBAgAABAgQIECBAgEChgABoIYtMAgQIECBAgAABAgQIECBAgAABAgSqICAAWoVedA0ECBAgQIAAAQIECBAgQIAAAQIECBQKCIAWssgkQIAAAQIECBAgQIAAAQIECBAgQKAKAgKgVehF10CAAAECBAgQIECAAAECBAgQIECAQKGAAGghi0wCBAgQIECAAAECBAgQIECAAAECBKogIABahV50DQQIECBAgAABAgQIECBAgAABAgQIFAoIgBayyCRAgAABAgQIECBAgAABAgQIECBAoAoCAqBV6EXXQIAAAQIECBAgQIAAAQIECBAgQIBAoYAAaCGLTAIECBAgQIAAAQIECBAgQIAAAQIEqiAgAFqFXnQNBAgQIECAAAECBAgQIECAAAECBAgUCgiAFrLIJECAAAECBAgQIECAAAECBAgQIECgCgICoFXoRddAgAABAgQIECBAgAABAgQIECBAgEChgABoIYtMAgQIECBAgAABAgQIECBAgAABAgSqICAAWoVedA0ECBAgQIAAAQIECBAgQIAAAQIECBQKjC/MlUmAQEcF5syZ09HjD+XgZ5xxxlCqqUOAAAECBAgQIECAAAECBAgQKLWAEaCl7h6NI0CAAAECBAgQIECAAAECBAgQIECgFQEB0Fb01CVAgAABAgQIECBAgAABAgQIECBAoNQCAqCl7h6NI0CAAAECBAgQIECAAAECBAgQIECgFQEB0Fb01CVAgAABAgQIECBAgAABAgQIECBAoNQCAqCl7h6NI0CAAAECBAgQIECAAAECBAgQIECgFQEB0Fb01CVAgAABAgQIECBAgAABAgQIECBAoNQCAqCl7h6NI0CAAAECBAgQIECAAAECBAgQIECgFQEB0Fb01CVAgAABAgQIECBAgAABAgQIECBAoNQCAqCl7h6NI0CAAAECBAgQIECAAAECBAgQIECgFQEB0Fb01CVAgAABAgQIECBAgAABAgQIECBAoNQCAqCl7h6NI0CAAAECBAgQIECAAAECBAgQIECgFQEB0Fb01CVAgAABAgQIECBAgAABAgQIECBAoNQCAqCl7h6NI0CAAAECBAgQIECAAAECBAgQIECgFQEB0Fb01CVAgAABAgQIECBAgAABAgQIECBAoNQC40vdOo0bdoEJEyYM+zmdsBwC+r4c/VCWVowdOzZ5TZSlN7SjkwJjxozxWu8ksGOPuEC8n3udj3g3aECHBeJ1nqfx48ennp6e/KlHApUSiNd3pPyxUhfnYgg8KdD4+m7n99IxtV8Ofjt4mVVe4JBDDqn8NbZ6gfPnz2/1EOoTIECAAAECBAgQIECAAAECBEonYARo6bpkZBv04IMPjmwDnH3EBPT9iNGX7sRbbLFFWrVqVVq5cmXp2qZBBNolMG3atBR/UX788cfTQw891K7DOg6B0glssskmadKkSWnJkiWla5sGEWiXwOTJk9PGG2+cHe7hhx9Oa9asadehHYdAqQRiZNzUqVPT0qVL09q1a0vVNo0h0C6B/HUex3vsscfSihUr6oeeMWNGfXtDNwRAN1Ss4vv7sFDxDh7g8vT9ADijsCiCQl4To7DjR+Elx40wXuujsONH0SXH+7nX+Sjq8FF6qfE6z1MEhbyv5xoeqyrgdV7VnnVdfQXa+b30qclS+p7FcwIECBAgQIAAAQIECBAgQIAAAQIECHS5gABol3eg5hMgQIAAAQIECBAgQIAAAQIECBAg0FxAALS5jRICBAgQIECAAAECBAgQIECAAAECBLpcQAC0yztQ8wkQIECAAAECBAgQIECAAAECBAgQaC4gANrcRgkBAgQIECBAgAABAgQIECBAgAABAl0uIADa5R2o+QQIECBAgAABAgQIECBAgAABAgQINBcQAG1uo4QAAQIECBAgQIAAAQIECBAgQIAAgS4XEADt8g7UfAIECBAgQIAAAQIECBAgQIAAAQIEmgsIgDa3UUKAAAECBAgQIECAAAECBAgQIECAQJcLCIB2eQdqPgECBAgQIECAAAECBAgQIECAAAECzQUEQJvbKCFAgAABAgQIECBAgAABAgQIECBAoMsFBEC7vAM1nwABAgQIECBAgAABAgQIECBAgACB5gICoM1tlBAgQIAAAQIECBAgQIAAAQIECBAg0OUCAqBd3oGaT4AAAQIECBAgQIAAAQIECBAgQIBAcwEB0OY2SggQIECAAAECBAgQIECAAAECBAgQ6HIBAdAu70DNJ0CAAAECBAgQIECAAAECBAgQIECguYAAaHMbJQQIECBAgAABAgQIECBAgAABAgQIdLmAAGiXd6DmEyBAgAABAgQIECBAgAABAgQIECDQXEAAtLmNEgIECBAgQIAAAQIECBAgQIAAAQIEulxAALTLO1DzCRAgQIAAAQIECBAgQIAAAQIECBBoLiAA2txGCQECBAgQIECAAAECBAgQIECAAAECXS4gANrlHaj5BAgQIECAAAECBAgQIECAAAECBAg0FxAAbW6jhAABAgQIECBAgAABAgQIECBAgACBLhcQAO3yDtR8AgQIECBAgAABAgQIECBAgAABAgSaCwiANrdRQoAAAQIECBAgQIAAAQIECBAgQIBAlwsIgHZ5B2o+AQIECBAgQIAAAQIECBAgQIAAAQLNBQRAm9soIUCAAAECBAgQIECAAAECBAgQIECgywUEQLu8AzWfAAECBAgQIECAAAECBAgQIECAAIHmAgKgzW2UECBAgAABAgQIECBAgAABAgQIECDQ5QICoF3egZpPgAABAgQIECBAgAABAgQIECBAgEBzAQHQ5jZKCBAgQIAAAQIECBAgQIAAAQIECBDocgEB0C7vQM0nQIAAAQIECBAgQIAAAQIECBAgQKC5gABocxslBAgQIECAAAECBAgQIECAAAECBAh0uYAAaJd3oOYTIECAAAECBAgQIECAAAECBAgQINBcQAC0uY0SAgQIECBAgAABAgQIECBAgAABAgS6XEAAtMs7UPMJECBAgAABAgQIECBAgAABAgQIEGguIADa3EYJAQIECBAgQIAAAQIECBAgQIAAAQJdLiAA2uUdqPkECBAgQIAAAQIECBAgQIAAAQIECDQXEABtbqOEAAECBAgQIECAAAECBAgQIECAAIEuFxAA7fIO1HwCBAgQIECAAAECBAgQIECAAAECBJoLCIA2t1FCgAABAgQIECBAgAABAgQIECBAgECXCwiAdnkHaj4BAgQIECBAgAABAgQIECBAgAABAs0FBECb2yghQIAAAQIECBAgQIAAAQIECBAgQKDLBQRAu7wDNZ8AAQIECBAgQIAAAQIECBAgQIAAgeYCAqDNbZQQIECAAAECBAgQIECAAAECBAgQINDlAgKgXd6Bmk+AAAECBAgQIECAAAECBAgQIECAQHMBAdDmNkoIECBAgAABAgQIECBAgAABAgQIEOhyAQHQLu9AzSdAgAABAgQIECBAgAABAgQIECBAoLmAAGhzGyUECBAgQIAAAQIECBAgQIAAAQIECHS5gABol3eg5hMgQIAAAQIECBAgQIAAAQIECBAg0FxAALS5jRICBAgQIECAAAECBAgQIECAAAECBLpcQAC0yztQ8wkQIECAAAECBAgQIECAAAECBAgQaC4gANrcRgkBAgQIECBAgAABAgQIECBAgAABAl0uIADa5R2o+QQIECBAgAABAgQIECBAgAABAgQINBcQAG1uo4QAAQIECBAgQIAAAQIECBAgQIAAgS4XEADt8g7UfAIECBAgQIAAAQIECBAgQIAAAQIEmgsIgDa3UUKAAAECBAgQIECAAAECBAgQIECAQJcLCIB2eQdqPgECBAgQIECAAAECBAgQIECAAAECzQUEQJvbKCFAgAABAgQIECBAgAABAgQIECBAoMsFBEC7vAM1nwABAgQIECBAgAABAgQIECBAgACB5gICoM1tlBAgQIAAAQIECBAgQIAAAQIECBAg0OUCAqBd3oGaT4AAAQIECBAgQIAAAQIECBAgQIBAcwEB0OY2SggQIECAAAECBAgQIECAAAECBAgQ6HIBAdAu70DNJ0CAAAECBAgQIECAAAECBAgQIECguYAAaHMbJQQIECBAgAABAgQIECBAgAABAgQIdLmAAGiXd6DmEyBAgAABAgQIECBAgAABAgQIECDQXEAAtLmNEgIECBAgQIAAAQIECBAgQIAAAQIEulxAALTLO1DzCRAgQIAAAQIECBAgQIAAAQIECBBoLiAA2txGCQECBAgQIECAAAECBAgQIECAAAECXS4gANrlHaj5BAgQIECAAAECBAgQIECAAAECBAg0FxAAbW6jhAABAgQIECBAgAABAgQIECBAgACBLhcY3+Xt15E3jJ0AAC30SURBVHwCBNokMGfOnDYdqT2HOeOMM9pzIEchQIAAAQIECBAgQIAAAQIERrWAEaCjuvtdPAECBAgQIECAAAECBAgQIECAAIFqCwiAVrt/XR0BAgQIECBAgAABAgQIECBAgACBUS0gADqqu9/FEyBAgAABAgQIECBAgAABAgQIEKi2gABotfvX1REgQIAAAQIECBAgQIAAAQIECBAY1QICoKO6+108AQIECBAgQIAAAQIECBAgQIAAgWoLCIBWu39dHQECBAgQIECAAAECBAgQIECAAIFRLSAAOqq738UTIECAAAECBAgQIECAAAECBAgQqLaAAGi1+9fVESBAgAABAgQIECBAgAABAgQIEBjVAgKgo7r7XTwBAgQIECBAgAABAgQIECBAgACBagsIgFa7f10dAQIECBAgQIAAAQIECBAgQIAAgVEtMH5UX30XXvyqVavSD3/4w3TNNdekJUuWpJkzZ6ZZs2alQw45JI0bN64Lr0iTCRAgQIAAAQIECBAgQIAAAQIECHROQAC0c7ZtP/LSpUvT0UcfnRYuXJgde9q0aWn+/PnZz5VXXplOPPHENHHixLaf1wEJjITAnDlzRuK0Tc95xhlnNC1TQIAAAQIECBAgQIAAAQIECJRXwC3w5e2bfi07+eSTs+Dn7Nmz089//vP005/+NJ177rlp1113TZdffnn68pe/3K+ODAIECBAgQIAAAQIECBAgQIAAAQKjWUAAtEt6/6abbkpXX3112njjjdMpp5ySNt9886zl2267bTrttNOy29/nzZuXli9f3iVXpJkECBAgQIAAAQIECBAgQIAAAQIEOi8gANp547ac4bLLLsuOc8ABB6SNNtqo1zHjVvj99tsvrV69OkUQVCJAgAABAgQIECBAgAABAgQIECBA4AkBc4B2ySvhxhtvzFoat78XpQiAXnXVVen6669Pb3rTm4p2kUeAQAsC5iRtAU9VAgQIECBAgAABAgQIECAwggICoCOIvyGnvueee7Ldp06dWlgtz88XSCrcqZb5+c9/Pt1yyy2Fxa985SvToYceWlgmkwCBcgmULSAbOj/5yU/KhaQ1BAYQGDNmTFY6duzYtMUWWwywpyIC3S0wfvz45HXe3X2o9esXiNd5njbddNP0+OOP5089EqiUQLyfR9pss828zivVsy6mUSD/nB55sdB3uz6rP/WbovFstksn8Mgjj2RtygOdfRsYb4CR8v36lufPr7vuunTNNdfkT3s9xmJKfW+v77WDJwQIEBhA4A1veMMApYrKKPDd7363jM0aljZ165zZ+e/7YUHqwpMsW7asVK0uQ3+tW7cuxU/+ZSKmTCpTii820sACkyZNGniHYS5dtWrVMJ9x4NP19fGa6u/1t7/9rX/mCOY87WlPG8GzV+PUXufl68eyvzeWT2xwLYo/cDX+kWtwtYr3EgAtdilVbvwF87HHHsvaFH/RLEpTpkzJssv2n66orSORN3/+/JE4rXMSIECAAAECwyjgS/X6sfsGi9Zfwx4Eegt4DfX26IZn3hu7oZe0sdsFvDeWvwcFQMvfR9ltS7H6+6OPPpqaBTjz/PX9JegLX/hC02NEcHXRokVdIDL8TQzXfPTtypUr04oVK4a/Ec5IYJgEpk+fnv3RZX0jyoepOU5DoCMCM2bMyH6/xh8ZH3zwwY6cw0EJlEFg8uTJKb6UPfTQQ2VojjYQ6IhADAbZZJNNsmMvWbIkrVmzpiPncVACIy0QI+FiEeR4T1+7du1IN8f5CXREYMKECfXb3iMO1njn1pZbbjnkcwqADplueCvGF7WY37Ox4xtbkOfHh9yB0vpeLPfdd99A1UdtWdw6lqeenp7sVrL8uUcCVRTwOq9ir7qmIgGv9SIVeVUSiNd4pMbPMlW6PtdCIATy13lsxx+2vN5DQqqiQD4HqNd5FXvXNeUC+es8nrfzs/oTM+jmZ/FYWoEIgEbKA519G5rPedWuyWH7Ht9zAgQIECBAgAABAgQIECBAgAABAt0oIADaJb2Wj9xcsGBBYYvz/D333LOwXCYBAgQIECBAgAABAgQIECBAgACB0SggANolvX7QQQdlLb344ov7tTiGv19yySVZ/qxZs/qVyyBAgAABAgQIECBAgAABAgQIECAwWgUEQLuk5/fff/+00047pVtvvTXNmzevV6vPOuustHjx4rTjjjum2bNn9yrzhAABAgQIECBAgAABAgQIECBAgMBoFrAIUpf0/pgxY9JRRx2VTjjhhDR37tx01VVXpZkzZ6Ybbrgh245Vsj760Y+m2E8iQIAAAQIECBAgQIAAAQIECBAgQOAJASNAu+iV8NKXvjR94QtfSFtvvXW69NJL09e//vUs+BkjQz//+c+n5zznOV10NZpKgAABAgQIECBAgAABAgQIECBAoPMCRoB23ritZ3je856XzjvvvOyW94ULF6ZYHCkComPHimW3FdrBCBAgQIAAAQIECBAgQIAAAQIEKiEgANql3Th9+vQUPxIBAgQIECBAgAABAgQIECBAgAABAs0FDBtsbqOEAAECBAgQIECAAAECBAgQIECAAIEuFxAA7fIO1HwCBAgQIECAAAECBAgQIECAAAECBJoLCIA2t1FCgAABAgQIECBAgAABAgQIECBAgECXCwiAdnkHaj4BAgQIECBAgAABAgQIECBAgAABAs0FBECb2yghQIAAAQIECBAgQIAAAQIECBAgQKDLBQRAu7wDNZ8AAQIECBAgQIAAAQIECBAgQIAAgeYCAqDNbZQQIECAAAECBAgQIECAAAECBAgQINDlAgKgXd6Bmk+AAAECBAgQIECAAAECBAgQIECAQHMBAdDmNkoIECBAgAABAgQIECBAgAABAgQIEOhyAQHQLu9AzSdAgAABAgQIECBAgAABAgQIECBAoLmAAGhzGyUECBAgQIAAAQIECBAgQIAAAQIECHS5gABol3eg5hMgQIAAAQIECBAgQIAAAQIECBAg0FxAALS5jRICBAgQIECAAAECBAgQIECAAAECBLpcQAC0yztQ8wkQIECAAAECBAgQIECAAAECBAgQaC4gANrcRgkBAgQIECBAgAABAgQIECBAgAABAl0uIADa5R2o+QQIECBAgAABAgQIECBAgAABAgQINBcQAG1uo4QAAQIECBAgQIAAAQIECBAgQIAAgS4XEADt8g7UfAIECBAgQIAAAQIECBAgQIAAAQIEmgsIgDa3UUKAAAECBAgQIECAAAECBAgQIECAQJcLCIB2eQdqPgECBAgQIECAAAECBAgQIECAAAECzQUEQJvbKCFAgAABAgQIECBAgAABAgQIECBAoMsFBEC7vAM1nwABAgQIECBAgAABAgQIECBAgACB5gICoM1tlBAgQIAAAQIECBAgQIAAAQIECBAg0OUCAqBd3oGaT4AAAQIECBAgQIAAAQIECBAgQIBAcwEB0OY2SggQIECAAAECBAgQIECAAAECBAgQ6HIBAdAu70DNJ0CAAAECBAgQIECAAAECBAgQIECguYAAaHMbJQQIECBAgAABAgQIECBAgAABAgQIdLnA+C5vv+a3WWDsWDHxItK1a9em++67LysaM2ZM4lSkJK8qAvF67+np8TqvSoe6jkKBRYsWZa9z7+mFPDIrJBDv5+vWrfOeXqE+dSn9BVasWJGWLVuWFcTndJ/V+xvJqY7AmjVrks8v1elPV9JfID635PGXdr6nj6l9KOrpfzo5BAg0ClxxxRXpyCOPzLLe+c53puOPP76x2DYBAgQIdJnAvvvum31ZnjZtWrrqqqu6rPWaS4AAAQKNAp/61KfSOeeck2V9+9vfTi94wQsai20TIECAQBcJXHPNNentb3971uLDDz88nXLKKW1pveF+bWF0EAIECBAgQIAAAQIECBAgQIAAAQIEyiggAFrGXtEmAgQIECBAgAABAgQIECBAgAABAgTaIiAA2hZGByFAgAABAgQIECBAgAABAgQIECBAoIwCAqBl7BVtIkCAAAECBAgQIECAAAECBAgQIECgLQICoG1hdBACBAgQIECAAAECBAgQIECAAAECBMooIABaxl7RJgIECBAgQIAAAQIECBAgQIAAAQIE2iIwpqeW2nIkByFQYYEVK1akBQsWZFc4Y8aMtM0221T4al0aAQIEqi9w4403pnXr1qXx48enZz7zmdW/YFdIgACBCgvcc889afHixdkV7rLLLmnKlCkVvlqXRoAAgWoLPPLII+n222/PLnLatGlpu+22a8sFC4C2hdFBCBAgQIAAAQIECBAgQIAAAQIECBAoo4Bb4MvYK9pEgAABAgQIECBAgAABAgQIECBAgEBbBARA28LoIAQIECBAgAABAgQIECBAgAABAgQIlFFAALSMvaJNBAgQIECAAAECBAgQIECAAAECBAi0RUAAtC2MDkKAAAECBAgQIECAAAECBAgQIECAQBkFxpexUdpEoEwCf/7zn9N5552X7rrrrjR58uT07Gc/Ox144IEpVpiUCBAgQKCzArGq7w9+8INsJcgHHnggbbnllmnnnXdOb37zm9PTnva0wpOvWrUq/fCHP0zXXHNNWrJkSZo5c2aaNWtWOuSQQ9K4cePaVicO5HdEIadMAgQIDEqgp6cnnXTSSWnhwoXpM5/5TNpqq60K6w3lvXa46hQ2WCYBAgRGkcBvfvOb9Lvf/S7dcsstacyYMVms5C1veUvaYYcdChWG67N63/NYBb6wO2QSeEIgvkB/6Utfyp5MmTIlrV69OvvZeOON06mnnpr23ntvVAQIECDQIYHLLrsszZ07Nz366KNZ4HL69OkpAqLr1q1L8T78sY99LB100EG9zr506dJ09NFHZ1+mo2DatGnpoYceyvZ56Utfmk488cQ0ceLEluvEAfyO6MXoCQECBDZY4Nxzz01f/epXs3pnn3122n777fsdYyjvtcNVp19jZRAgQGAUCaxZsyb9x3/8Rzr//POzq958883TY489liLwGIMOjj/++HTwwQf3Ehmuz+pF53ELfK+u8ITAUwI33HBD+vKXv5x9UY6/SF900UVp/vz56UMf+lD2ZfzYY49N999//1MVbBEgQIBA2wTuueeeevBzzpw56Re/+EX60Y9+lD2+613vyt6H4w9RMWqoMZ188slZ3uzZs9PPf/7z9NOf/jTFF+xdd901XX755dn7euP+sT2UOn5H9FX0nAABAhsmcNttt6Wvfe1rA1YaynvtcNUZsOEKCRAgMAoEvvWtb2XBz7gr6ytf+Ur62c9+ln1Wf+9735sNWPjsZz+b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ECAwKAEB0EEx2YkAAQIECBAgQIAAAQIECBAgQIAAgW4UEADtxl7TZgIECBAgQIAAAQIECBAgQIAAAQIEBiUgADooJjsRIECAAAECBAgQIECAAAECBAgQINCNAgKg3dhr2kyAAAECBAgQIECAAAECBAgQIECAwKAEBEAHxWQnAgQIECBAgAABAgQIECBAgAABAgS6UUAAtBt7TZsJECBAgAABAqNQ4Nhjj01jxozJflavXj0KBUbnJa9YsSJdf/31o/PiXTUBAgQIECDQFgEB0LYwOggBAgQIECBAgECnBXp6ejp9CscvmcAPfvCDtMcee6SLLrqoZC3THAIECBAgQKCbBMZ3U2O1lQABAgQIECBAYPQKTJgwIW200UajF2CUXfkDDzyQ3vzmN4+yq3a5BAgQIECAQCcEjADthKpjEiBAgAABAgQItF3g1FNPTY8++mj2M3HixLYf3wEJECBAgAABAgSqKSAAWs1+dVUECBAgQIAAAQIECBAgQIAAAQIECNQE3ALvZUCAAAECBAgQIJDWrFmTrrvuukzimc98Ztpkk03SlVdemS655JL09Kc/PR122GFp+vTpvaRiTs5bb701/d///V+68cYb0zbbbJNmzZqVnv3sZ6eNN964177x5K677kpxW3Ok5z73uWnSpEnZdtE/ixcvTrfffntWtPvuu6fNN988LVy4MN13331Z3r777psthlRU9+GHH87aFO2K7ec85zlZu3bYYYd+uz/44INpwYIFvc7Td6fly5enm2++OcuOY2y99dZ9d0lr165Nf/jDH7L8nXbaKW255Zb99mk1I0zmz5+f7rzzzrRu3bq06667ptmzZ6fddtttwEPHvtdee2266aabsmuNawiTZv0UB4tFpv74xz9mx212zVHY2E977bVXmjx5clYnP2c82XPPPdOmm26aGcViRldddVVatmxZ2nvvvdM+++yTZsyYkdVp/Of3v/99duw8769//Wu6+uqrs6dRZ9y4cXmRRwIECBAgQIDA+gVqH1wlAgQIECBAgACBUS5QCyzGCkPZz29+85uet7zlLfXnkb/ZZpv11FbjrivVAp89teBbr33y+rXgX88FF1xQ3zff+N73vlff/+yzz86zCx8/8IEPZPvWbnXvqQUps32OOeaYev1Vq1b1q/f444/3fP7zn++pBVbr++Vtise3ve1tPUuWLOlVrxYYrO/77//+773K8if/+Z//Wd/nPe95T57d6/Hiiy+u73PFFVf0Kmv1SS0A23PkkUcWXtfYsWN73vWud/UsWrSo8DS/+tWvep71rGfV29boUQs89tQWGSqsVwuy1ut87nOfK9wnMs8888z6frUAZX2/cM7Pdemll/aESS2AXs/Ly2pzuvZ87Wtfq9fLN8aPH99v37zO0qVL8908EiBAgAABAgQGJeAW+NonKYkAAQIECBAgQOApgW984xvp3HPPfSqjtvWiF72oPrrvxz/+cTai8ne/+102CnO//fZLc+bMSQcffHCqBUpTLRiXDj300PSxj32s1zFiFGmM5IxUC4b2Kmt8EqMPv//972dZcZy+I08b9823Y27QOP+xxx6basHRtNVWW6XXve516Z3vfGeKEa2RakHXbOTpLbfcklfLRiFut9122fNf/vKX9fzGjcb8GBFblH7+859n2XHeF7zgBUW7DCkvRljuv//+6b//+7+z64qRpX/3d3+X3vCGN2QjaGtB3/Sd73wnu9bHHnus1zlqgdt00EEHpT/96U/ZiMnnPe95mceLX/zibIRujH5905velPVdr4ptfnLhhRemV7ziFdmIzhitGv2Uj/qMNr/vfe9LX/rSl3qdNUZ5xijhPG277bbp+c9/fvZj9Geu4pEAAQIECBAYtMCgwqR2IkCAAAECBAgQqLRA4wjQ2gfJntpt7z3/9V//1VO7Lb7ni1/8Yk+MJIz00EMP1Ufybb/99j2XXXZZL5cYrVkLdtVH7/UdDVkLdmVlMcKv2ajF888/v16/FlisH3+gEaCf/vSn63Vi9GjjaNU4wDnnnNNTuz072yfa15iOPvroLL92235PLZDaWNRTmxqgpxa0rR87bGq3zPfaJ57UAnvZPu9973v7lbWSEaM745zxE3aN7YuRkHG+vPz444+vn+ovf/lLT20ag6xsxx137Pntb39bL4uNGOFZC1zX64ZPY2rnCNBoX21agJ4YCZqnGK17xhln1M+/884799Rum8+Ls8f777+/Xv6v//qvvco8IUCAAAECBAhsiIARoLVPZBIBAgQIECBAgEBvgW9/+9vp/e9/fzbS88Mf/nA68MADsx1OOOGEbCRf7dbrbJToAQcc0KtijNa86KKLUszbGelDH/pQilGKeYqRopFizsx8lGdelj9+97vfzTZj7tFDDjkkz276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QIAAAQJDE4hA5bbbbptVjmBoBArzgOOqVauyW8JjQaF89OTRRx/ddG7JCCbuu+++2bHyQNq73vWu1Hj79WBaGbduf/rTn852jaDefvvtV1+9PTIjwPpv//ZvKdoSKebq/OAHP5ht9/0nHwUawdtIjaM/833zvDwo14nb3+NcW2yxRT3Iet1116VXvOIV6e67786bka1Wf/jhh9dXpM8NYodTTz21Po1AtO9rX/taiv6JFCN358+fn007kM/h+ZWvfKW+CFTsE6Mv3/a2t8Vmthr9EUccka699tpsJGYeOI0RvDGSt1Np8uTJ9eP/+Mc/TjHfaixMtXr16k6d0nEJECBAgACBigoIgFa0Y10WAQIECBAgQKATAjEqMEYEbr/99tmIxLlz52ajL2PkYSyiE8HPX//619mpDzvssCzwOFA78lGgsU8E3fKRiwPVKSr7h3/4h3TUUUdlRTfddFMW3IuRkHE7eIzs/NjHPpZiLstNNtkkm8OzcVRn4/HyAGielwc78+fxGPOANqZOBUDjHO973/tSbhTBv1jgKNoe1xV9EFMRRPrnf/7n9KY3vSnbjn9iftWzzjor65OYP/T9739/1k8RdI75VV/96lenBx54IAs2Rx821s0P8o//+I/1Eag/+9nP0vOf//ysbkyFEN4x6jYCk51K48aNSy996Uuzw99xxx3p0EMPzUap3njjjZ06peMSIECAAAECFRUQAK1ox7osAgQIECBAgECnBGK19D/96U9ZwDGCYDGiMBZFilvfI+28887pG9/4Rvr+97+fIog1UIrbvPNbnV/ykpdkwcqB9m9WNn78+PT1r389u917r732ygJ7MU9nLIwUKdoRIxZjJOULX/jCZofJAqf5Le4xEjXmDO2bGoOicYt8nK9TKdodt+7HPKmxyFGkhQsXZtcV7hHc/clPflIYaI6FpiJYGKNEI/AbIyfjefRTXNurXvWqbETlJz7xicLm77nnnimmOoiRp+Ebafny5dn0AdFXMbfr3nvvXVi3XZkxh2nM2Tpx4sT6IW+++eb6tg0CBAgQIECAwGAExtQmFDej+GCk7EOAAAECBAgQIFAoEAG5CKxFIDOCdDEf5obexl544BYyV65cmd0afu+992YjJqNdraxa30JT2lo15uK84YYbslXhI0A52LlHI1h6++23Z1MTxK31EbhtXPV9fY2MW+UjGBoLTcW0BXnQen312lUewdtof8xVGiONJQIECBAgQIDAhggIgG6Iln0JECBAgAABAgQIECBAgAABAgQIEOgqAbfAd1V3aSwBAgQIECBAgAABAgQIECBAgAABAhsi8MRkPhtSw74ECBAgQIAAAQIECDQViNXWW51latKkSdmiUE1PooAAAQIECBAgQGDQAm6BHzSVHQkQIECAAAECBAisXyBWWV+2bNn6dxxgj1i8abfddhtgD0UECBAgQIAAAQKDFTACdLBS9iNAgAABAgQIECAwCIFYnChWWm8lNa563spx1CVAgAABAgQIEEjJCFCvAgIECBAgQIAAAQIECBAgQIAAAQIEKitgEaTKdq0LI0CAAAECBAgQIECAAAECBAgQIEBAANRrgAABAgQIECBAgAABAgQIECBAgACBygoIgFa2a10YAQIECBAgQIAAAQIECBAgQIAAAQICoF4DBAgQIECAAAECBAgQIECAAAECBAhUVkAAtLJd68IIECBAgAABAgQIECBAgAABAgQIEBAA9RogQIAAAQIECBAgQIAAAQIECBAgQKCyAgKgle1aF0aAAAECBAgQIECAAAECBAgQIECAgACo1wABAgQIECBAgAABAgQIECBAgAABApUVEACtbNe6MAIECBAgQIAAAQIECBAgQIAAAQIEBEC9BggQIECAAAECBAgQIECAAAECBAgQqKyAAGhlu9aFESBAgAABAgQIECBAgAABAgQIECAgAOo1QIAAAQIECBAgQIAAAQIECBAgQIBAZQUEQCvbtS6MAAECBAgQIECAAAECBAgQIECAAIH/B0oZ5Bor7c6xAAAAAElFTkSuQmCC" width="672" /></p>
-<p>join latino users with restaurants, group by restaurants, count users what are the names of the most reviewed restaurants</p>
+<p>This seems in line with what we expect. The vast majority of restaurants have a few reviews, with a long tail – some restaurants have many more reviews.</p>
+<p>Here is some code to group reviews by ethnicity.</p>
 <pre class="r"><code>ReviewCountsForEthnicity = function(eth.names) {
   eth.users = semi_join(users, eth.names, by = &quot;name&quot;)
   non.eth.users = anti_join(users, eth.names, by = &quot;name&quot;)
   
   restaurant.reviews = inner_join(restaurants, reviews, by = &quot;business_id&quot;)
-  restaurant.reviews_eth.users = inner_join(restaurant.reviews, eth.users, by = &quot;user_id&quot;)
-  restaurant.reviews_non.eth.users = inner_join(restaurant.reviews, non.eth.users, by = &quot;user_id&quot;)
+  restaurant.reviews.eth.users = inner_join(restaurant.reviews, eth.users, by = &quot;user_id&quot;)
+  restaurant.reviews.non.eth.users = inner_join(restaurant.reviews, non.eth.users, by = &quot;user_id&quot;)
   
-  by.restaurant = group_by(restaurant.reviews_eth.users, business_id)
-  eth.summary = summarise(by.restaurant, num.reviews = n()) %&gt;% arrange(desc(num.reviews))
-  eth.summary = inner_join(eth.summary, restaurants, by = &quot;business_id&quot;) %&gt;% select(name, num.reviews, categories)
+  by.restaurant = group_by(restaurant.reviews.eth.users, business_id)
+  eth.summary = summarise(by.restaurant, num.reviews = n()) 
+  eth.summary = inner_join(eth.summary, restaurants, by = &quot;business_id&quot;) %&gt;% select(business_id, name, num.reviews, categories) 
   
-  by.restaurant = group_by(restaurant.reviews_non.eth.users, business_id)
-  non_eth.summary = summarise(by.restaurant, num.reviews = n()) %&gt;% arrange(desc(num.reviews))
-  non_eth.summary = inner_join(non_eth.summary, restaurants, by = &quot;business_id&quot;) %&gt;% select(name, num.reviews, categories)
+  by.restaurant = group_by(restaurant.reviews.non.eth.users, business_id)
+  non.eth.summary = summarise(by.restaurant, num.reviews = n()) %&gt;% arrange(desc(num.reviews))
+  non.eth.summary = inner_join(non.eth.summary, restaurants, by = &quot;business_id&quot;) %&gt;% select(business_id, name, num.reviews, categories) 
   
-  return(list(eth.summary, non_eth.summary))
+  return(list(eth.summary, non.eth.summary))
 }</code></pre>
-<p>Top 50 restaurants among Latinos, based on number of reviews</p>
-<pre class="r"><code>n = 50
-summaries = ReviewCountsForEthnicity(latino.names)
-n.eth.summaries = head(summaries[[1]], n)
-n.eth.summaries</code></pre>
-<pre><code>## Source: local data frame [50 x 3]
+<pre class="r"><code>CompileStats = function(names, n) {
+  l = list()
+  summaries = ReviewCountsForEthnicity(names)
+  
+  n.eth.summaries = head(summaries[[1]] %&gt;% arrange(desc(num.reviews)), n)
+  l[[1]] = n.eth.summaries
+  
+  n.non.eth.summaries = head(summaries[[2]] %&gt;% arrange(desc(num.reviews)) , n)
+  l[[2]] = n.non.eth.summaries
+  
+  l[[3]] = semi_join(n.eth.summaries, n.non.eth.summaries, by = &quot;business_id&quot;)
+  l[[4]] = anti_join(n.eth.summaries, n.non.eth.summaries, by = &quot;business_id&quot;)
+  l[[5]] = anti_join(n.non.eth.summaries, n.eth.summaries, by = &quot;business_id&quot;)
+
+  return(l)
+}</code></pre>
+<p>This is a utlity function to count the categories of a set of restaurants.</p>
+<pre class="r"><code>MakeCategoriesDict = function(categories) {
+  category.map = hash()
+  # category.map[[&quot;key&quot;]]
+  for (category.string in categories) {
+    str = gsub(&quot;\'|\\[|\\]&quot;, '', category.string)
+    category.list = unlist(strsplit(str, &quot;, &quot;))
+    for (category in category.list) {
+      count = category.map[[category]]
+      if (is.null(count)) {
+        category.map[[category]] = 1
+      } else {
+        category.map[[category]] = count + 1
+      }
+    }
+  }
+  del('Restaurants', category.map)  # All the Restaurants have this category, so it's useless.
+  return(category.map)
+}</code></pre>
+<p>Top 100 restaurants among Latinos, based on number of reviews:</p>
+<pre class="r"><code>n = 100
+latinos = CompileStats(latino.names, n)
+latinos[[1]] %&gt;% select(name, num.reviews)</code></pre>
+<pre><code>## Source: local data frame [100 x 2]
 ## 
 ##                   name num.reviews
 ##                  (chr)       (int)
@@ -391,12 +443,71 @@ n.eth.summaries</code></pre>
 ## 8   Hash House A Go Go          68
 ## 9   Hash House A Go Go          65
 ## 10   El Dorado Cantina          64
-## ..                 ...         ...
-## Variables not shown: categories (chr)</code></pre>
-<p>Top 50 restaurants among non-Latinos, based on number of reviews</p>
-<pre class="r"><code>n.non.eth.summaries = head(summaries[[2]], n)
-n.non.eth.summaries</code></pre>
-<pre><code>## Source: local data frame [50 x 3]
+## ..                 ...         ...</code></pre>
+<p>Category counts:</p>
+<pre class="r"><code>sort(values(MakeCategoriesDict(latinos[[1]]$categories)), decreasing = TRUE)</code></pre>
+<pre><code>##                 Nightlife                      Bars 
+##                        20                        19 
+##            American (New)    American (Traditional) 
+##                        18                        15 
+##        Breakfast &amp; Brunch                   Buffets 
+##                        15                        10 
+##                   Mexican                      Food 
+##                        10                         9 
+##               Steakhouses                Sandwiches 
+##                         9                         7 
+##                   Burgers                   Italian 
+##                         6                         6 
+##                  Japanese                     Pizza 
+##                         6                         5 
+##                Sushi Bars                  Barbeque 
+##                         5                         4 
+##              Coffee &amp; Tea                   Seafood 
+##                         4                         4 
+##        Tapas/Small Plates      Arts &amp; Entertainment 
+##                         4                         3 
+##              Asian Fusion                    French 
+##                         3                         3 
+##                   Lounges                Tapas Bars 
+##                         3                         3 
+##                 Brazilian                 Breweries 
+##                         2                         2 
+##                   Casinos                   Chinese 
+##                         2                         2 
+##                  Desserts                    Korean 
+##                         2                         2 
+##            Latin American                      Pubs 
+##                         2                         2 
+##                 Soul Food                  Southern 
+##                         2                         2 
+##                   Spanish                      Thai 
+##                         2                         2 
+##                     Vegan                Vietnamese 
+##                         2                         2 
+##                 Wine Bars                  Bakeries 
+##                         2                         1 
+##                      Beer                   British 
+##                         1                         1 
+##                     Cafes              Cajun/Creole 
+##                         1                         1 
+##                 Caribbean             Cocktail Bars 
+##                         1                         1 
+##                     Delis Event Planning &amp; Services 
+##                         1                         1 
+##                 Fast Food                Gastropubs 
+##                         1                         1 
+##                  Hot Dogs             Mediterranean 
+##                         1                         1 
+##              Music Venues                     Ramen 
+##                         1                         1 
+##                Vegetarian                Venezuelan 
+##                         1                         1 
+##     Venues &amp; Event Spaces            Wine &amp; Spirits 
+##                         1                         1</code></pre>
+<p>Mostly Nightlife, Bars, American Food.</p>
+<p>Top 100 restaurants among non-Latinos, based on number of reviews</p>
+<pre class="r"><code>latinos[[2]] %&gt;% select(name, num.reviews)</code></pre>
+<pre><code>## Source: local data frame [100 x 2]
 ## 
 ##                       name num.reviews
 ##                      (chr)       (int)
@@ -410,66 +521,225 @@ n.non.eth.summaries</code></pre>
 ## 8       Hash House A Go Go        2636
 ## 9  Bouchon at The Venetian        2547
 ## 10  The Buffet at Bellagio        2514
-## ..                     ...         ...
-## Variables not shown: categories (chr)</code></pre>
-<p>Comparing the two sets, which restaurants are in the Top 50 for both groups?</p>
-<pre class="r"><code>intersect(n.eth.summaries[1], n.non.eth.summaries[1])</code></pre>
-<pre><code>## Source: local data frame [37 x 1]
+## ..                     ...         ...</code></pre>
+<p>Category counts:</p>
+<pre class="r"><code>sort(values(MakeCategoriesDict(latinos[[2]]$categories)), decreasing = TRUE)</code></pre>
+<pre><code>##                      Bars                 Nightlife 
+##                        25                        25 
+##            American (New)    American (Traditional) 
+##                        22                        16 
+##        Breakfast &amp; Brunch               Steakhouses 
+##                        14                        14 
+##                   Buffets                   Burgers 
+##                        10                         9 
+##                      Food                   Mexican 
+##                         8                         8 
+##                   Lounges                   Italian 
+##                         7                         6 
+##                  Japanese                Sandwiches 
+##                         6                         6 
+##              Asian Fusion                     Pizza 
+##                         5                         5 
+##                    French                   Seafood 
+##                         4                         4 
+##                Sushi Bars                  Barbeque 
+##                         4                         3 
+##                   Chinese             Mediterranean 
+##                         3                         3 
+##      Arts &amp; Entertainment                  Bakeries 
+##                         2                         2 
+##                 Breweries                   Casinos 
+##                         2                         2 
+##              Coffee &amp; Tea                  Desserts 
+##                         2                         2 
+##                Gastropubs                    Korean 
+##                         2                         2 
+##                      Pubs                     Salad 
+##                         2                         2 
+##                 Soul Food                  Southern 
+##                         2                         2 
+##                Tapas Bars        Tapas/Small Plates 
+##                         2                         2 
+##                 Wine Bars                      Beer 
+##                         2                         1 
+##                 Brazilian                   British 
+##                         1                         1 
+##                     Cafes              Cajun/Creole 
+##                         1                         1 
+##             Cocktail Bars                     Delis 
+##                         1                         1 
+## Event Planning &amp; Services                    German 
+##                         1                         1 
+##            Latin American                     Ramen 
+##                         1                         1 
+##                   Spanish                  Szechuan 
+##                         1                         1 
+##                      Thai                Vegetarian 
+##                         1                         1 
+##     Venues &amp; Event Spaces                Vietnamese 
+##                         1                         1 
+##            Wine &amp; Spirits 
+##                         1</code></pre>
+<p>Mostly Nightlife, Bars, American Food.</p>
+<p>Comparing the two sets, which restaurants are in common?</p>
+<pre class="r"><code>latinos[[3]] %&gt;% select(name, num.reviews)</code></pre>
+<pre><code>## Source: local data frame [75 x 2]
 ## 
-##                       name
-##                      (chr)
-## 1             Mon Ami Gabi
-## 2             Wicked Spoon
-## 3         Earl of Sandwich
-## 4         Bacchanal Buffet
-## 5      Gordon Ramsay BurGR
-## 6            Serendipity 3
-## 7               The Buffet
-## 8       Hash House A Go Go
-## 9  Bouchon at The Venetian
-## 10  The Buffet at Bellagio
-## ..                     ...</code></pre>
-<p>Surprisingly, these two groups share 42/50 (84%) of the same restaurants.</p>
+##                       name num.reviews
+##                      (chr)       (int)
+## 1             Mon Ami Gabi         121
+## 2             Wicked Spoon          70
+## 3         Earl of Sandwich          92
+## 4         Bacchanal Buffet          86
+## 5      Gordon Ramsay BurGR          89
+## 6            Serendipity 3          83
+## 7               The Buffet          56
+## 8       Hash House A Go Go          68
+## 9  Bouchon at The Venetian          42
+## 10  The Buffet at Bellagio          62
+## ..                     ...         ...</code></pre>
+<p>75%!</p>
+<p>Category counts:</p>
+<pre class="r"><code>sort(values(MakeCategoriesDict(latinos[[3]]$categories)), decreasing = TRUE)</code></pre>
+<pre><code>##                      Bars                 Nightlife 
+##                        17                        17 
+##    American (Traditional)            American (New) 
+##                        14                        13 
+##        Breakfast &amp; Brunch                   Buffets 
+##                        11                        10 
+##               Steakhouses                      Food 
+##                         8                         7 
+##                   Mexican                Sandwiches 
+##                         7                         6 
+##                   Burgers                   Italian 
+##                         5                         4 
+##                     Pizza              Asian Fusion 
+##                         4                         3 
+##                  Barbeque                    French 
+##                         3                         3 
+##                  Japanese                   Lounges 
+##                         3                         3 
+##                   Seafood      Arts &amp; Entertainment 
+##                         3                         2 
+##                 Breweries                   Casinos 
+##                         2                         2 
+##                   Chinese              Coffee &amp; Tea 
+##                         2                         2 
+##                  Desserts                    Korean 
+##                         2                         2 
+##                      Pubs                 Soul Food 
+##                         2                         2 
+##                  Southern                Sushi Bars 
+##                         2                         2 
+##                Tapas Bars        Tapas/Small Plates 
+##                         2                         2 
+##                  Bakeries                      Beer 
+##                         1                         1 
+##                 Brazilian                   British 
+##                         1                         1 
+##              Cajun/Creole             Cocktail Bars 
+##                         1                         1 
+##                     Delis Event Planning &amp; Services 
+##                         1                         1 
+##                Gastropubs            Latin American 
+##                         1                         1 
+##             Mediterranean                     Ramen 
+##                         1                         1 
+##                   Spanish                      Thai 
+##                         1                         1 
+##     Venues &amp; Event Spaces                Vietnamese 
+##                         1                         1 
+##            Wine &amp; Spirits                 Wine Bars 
+##                         1                         1</code></pre>
+<p>Bars, Nightlife, American food.</p>
 <p>Restaurants that are popular among Latinos but not among non-Latinos:</p>
-<pre class="r"><code>setdiff(n.eth.summaries[1], n.non.eth.summaries[1])</code></pre>
-<pre><code>## Source: local data frame [11 x 1]
+<pre class="r"><code>latinos[[4]] %&gt;% select(name, num.reviews)</code></pre>
+<pre><code>## Source: local data frame [25 x 2]
 ## 
-##                        name
-##                       (chr)
-## 1         El Dorado Cantina
-## 2            Tacos El Gordo
-## 3           Postino Arcadia
-## 4                Pizza Rock
-## 5              Gallo Blanco
-## 6   Eiffel Tower Restaurant
-## 7             China Poblano
-## 8           Viva Las Arepas
-## 9  Original Lindo Michoacan
-## 10             Border Grill
-## 11                Mr. Mamas</code></pre>
+##                      name num.reviews
+##                     (chr)       (int)
+## 1          Carson Kitchen          23
+## 2         Pink's Hot Dogs          23
+## 3          Joe's Real BBQ          23
+## 4         Postino Central          23
+## 5              Sushi Kaya          24
+## 6        Culinary Dropout          24
+## 7          Sunrise Coffee          24
+## 8             Bronze Cafe          24
+## 9  Yonaka Modern Japanese          24
+## 10             The Parlor          25
+## ..                    ...         ...</code></pre>
+<p>Category counts:</p>
+<pre class="r"><code>sort(values(MakeCategoriesDict(latinos[[4]]$categories)), decreasing = TRUE)</code></pre>
+<pre><code>##         American (New)     Breakfast &amp; Brunch               Japanese 
+##                      5                      4                      3 
+##                Mexican              Nightlife             Sushi Bars 
+##                      3                      3                      3 
+##                   Bars           Coffee &amp; Tea                   Food 
+##                      2                      2                      2 
+##                Italian     Tapas/Small Plates                  Vegan 
+##                      2                      2                      2 
+## American (Traditional)   Arts &amp; Entertainment               Barbeque 
+##                      1                      1                      1 
+##              Brazilian                Burgers                  Cafes 
+##                      1                      1                      1 
+##              Caribbean              Fast Food               Hot Dogs 
+##                      1                      1                      1 
+##         Latin American           Music Venues                  Pizza 
+##                      1                      1                      1 
+##             Sandwiches                Seafood                Spanish 
+##                      1                      1                      1 
+##            Steakhouses             Tapas Bars                   Thai 
+##                      1                      1                      1 
+##             Vegetarian             Venezuelan             Vietnamese 
+##                      1                      1                      1 
+##              Wine Bars 
+##                      1</code></pre>
+<p>Hard to see, a little bit of Mexican food.</p>
 <p>Vice-versa:</p>
-<pre class="r"><code>setdiff(n.non.eth.summaries[1], n.eth.summaries[1])</code></pre>
-<pre><code>## Source: local data frame [12 x 1]
+<pre class="r"><code>latinos[[5]] %&gt;% select(name, num.reviews)</code></pre>
+<pre><code>## Source: local data frame [25 x 2]
 ## 
-##                          name
-##                         (chr)
-## 1                Pho Kim Long
-## 2  Tom Colicchio's Craftsteak
-## 3       Four Peaks Brewing Co
-## 4                    Studio B
-## 5           Le Village Buffet
-## 6                 Lux Central
-## 7          The Buffet at ARIA
-## 8        Hot N Juicy Crawfish
-## 9         Spice Market Buffet
-## 10                     Olives
-## 11      Cornish Pasty Company
-## 12                Shake Shack</code></pre>
-<p>Similar analysis but for East Asians. Top 50 restaurants among East Asians, based on number of reviews:</p>
-<pre class="r"><code>summaries = ReviewCountsForEthnicity(east.asian.names)
-n.eth.summaries = head(summaries[[1]], n)
-n.eth.summaries</code></pre>
-<pre><code>## Source: local data frame [50 x 3]
+##                        name num.reviews
+##                       (chr)       (int)
+## 1       Mastro's Ocean Club         825
+## 2    Amélie's French Bakery         829
+## 3                       MIX         835
+## 4    Yard House Town Square         837
+## 5                       CUT         844
+## 6                Echo &amp; Rig         853
+## 7                      Raku         854
+## 8      Rehab Burger Therapy         862
+## 9                 Carnevino         881
+## 10 Soho Japanese Restaurant         882
+## ..                      ...         ...</code></pre>
+<pre class="r"><code>sort(values(MakeCategoriesDict(latinos[[5]]$categories)), decreasing = TRUE)</code></pre>
+<pre><code>##         American (New)                   Bars              Nightlife 
+##                      9                      8                      8 
+##            Steakhouses                Burgers                Lounges 
+##                      6                      4                      4 
+##     Breakfast &amp; Brunch               Japanese American (Traditional) 
+##                      3                      3                      2 
+##           Asian Fusion                Italian          Mediterranean 
+##                      2                      2                      2 
+##                  Salad             Sushi Bars               Bakeries 
+##                      2                      2                      1 
+##                  Cafes                Chinese                   Food 
+##                      1                      1                      1 
+##                 French             Gastropubs                 German 
+##                      1                      1                      1 
+##                Mexican                  Pizza                Seafood 
+##                      1                      1                      1 
+##               Szechuan             Vegetarian              Wine Bars 
+##                      1                      1                      1</code></pre>
+<p>No Mexican restaurants here.</p>
+</div>
+<div id="similar-analysis-but-for-east-asians" class="section level2">
+<h2>Similar analysis but for East Asians</h2>
+<p>Top 100 restaurants among East Asians, based on number of reviews:</p>
+<pre class="r"><code>asians = CompileStats(east.asian.names, n)
+asians[[1]] %&gt;% select(name, num.reviews)</code></pre>
+<pre><code>## Source: local data frame [100 x 2]
 ## 
 ##                        name num.reviews
 ##                       (chr)       (int)
@@ -483,16 +753,61 @@ n.eth.summaries</code></pre>
 ## 8               Monta Ramen          73
 ## 9       Gordon Ramsay BurGR          67
 ## 10            Lotus of Siam          63
-## ..                      ...         ...
-## Variables not shown: categories (chr)</code></pre>
-<p>Let’s look at the distribution of categories</p>
-<pre class="r"><code>get_categories_dict = function(categories) {
-  
-}</code></pre>
-<p>Top 50 restaurants among non-Latinos, based on number of reviews</p>
-<pre class="r"><code>n.non.eth.summaries = head(summaries[[2]], n)
-n.non.eth.summaries</code></pre>
-<pre><code>## Source: local data frame [50 x 3]
+## ..                      ...         ...</code></pre>
+<p>Category counts:</p>
+<pre class="r"><code>sort(values(MakeCategoriesDict(asians[[1]]$categories)), decreasing = TRUE)</code></pre>
+<pre><code>##                  Japanese                   Buffets 
+##                        17                        13 
+##                      Bars                   Chinese 
+##                        12                        12 
+##                 Nightlife            American (New) 
+##                        12                         9 
+##    American (Traditional)        Breakfast &amp; Brunch 
+##                         9                         9 
+##                Sushi Bars              Asian Fusion 
+##                         9                         8 
+##                    Korean                   Seafood 
+##                         7                         7 
+##               Steakhouses                      Food 
+##                         7                         6 
+##                    French                   Lounges 
+##                         5                         5 
+##                  Barbeque                   Burgers 
+##                         4                         4 
+##                Vietnamese              Coffee &amp; Tea 
+##                         4                         3 
+##                  Desserts                   Dim Sum 
+##                         3                         3 
+##                    Indian                   Mexican 
+##                         3                         3 
+##                Sandwiches                      Thai 
+##                         3                         3 
+##              Cajun/Creole                   Italian 
+##                         2                         2 
+##                     Ramen                  Szechuan 
+##                         2                         2 
+##                Tapas Bars      Arts &amp; Entertainment 
+##                         2                         1 
+##                 Breweries                     Cafes 
+##                         1                         1 
+##            Canadian (New)                 Cantonese 
+##                         1                         1 
+##                   Casinos                     Delis 
+##                         1                         1 
+## Event Planning &amp; Services             Mediterranean 
+##                         1                         1 
+##                     Pizza               Poutineries 
+##                         1                         1 
+##                  Southern                   Spanish 
+##                         1                         1 
+##                 Taiwanese        Tapas/Small Plates 
+##                         1                         1 
+##                Vegetarian     Venues &amp; Event Spaces 
+##                         1                         1</code></pre>
+<p>Japanese, Buffets, Bars, Chinese, Nightlife</p>
+<p>Top 100 restaurants among non-East Asians:</p>
+<pre class="r"><code>asians[[2]] %&gt;% select(name, num.reviews)</code></pre>
+<pre><code>## Source: local data frame [100 x 2]
 ## 
 ##                       name num.reviews
 ##                      (chr)       (int)
@@ -506,73 +821,215 @@ n.non.eth.summaries</code></pre>
 ## 8       Hash House A Go Go        2668
 ## 9  Bouchon at The Venetian        2537
 ## 10  The Buffet at Bellagio        2501
-## ..                     ...         ...
-## Variables not shown: categories (chr)</code></pre>
+## ..                     ...         ...</code></pre>
+<p>Category counts:</p>
+<pre class="r"><code>sort(values(MakeCategoriesDict(asians[[2]]$categories)), decreasing = TRUE)</code></pre>
+<pre><code>##                      Bars                 Nightlife 
+##                        25                        25 
+##            American (New)    American (Traditional) 
+##                        21                        15 
+##        Breakfast &amp; Brunch               Steakhouses 
+##                        15                        14 
+##                   Buffets                   Burgers 
+##                         9                         9 
+##                      Food                   Mexican 
+##                         8                         8 
+##                   Lounges                   Italian 
+##                         7                         6 
+##                  Japanese                Sandwiches 
+##                         6                         6 
+##              Asian Fusion                     Pizza 
+##                         5                         5 
+##                    French                   Seafood 
+##                         4                         4 
+##                Sushi Bars                  Barbeque 
+##                         4                         3 
+##                   Chinese             Mediterranean 
+##                         3                         3 
+##      Arts &amp; Entertainment                  Bakeries 
+##                         2                         2 
+##                 Breweries                   Casinos 
+##                         2                         2 
+##              Coffee &amp; Tea                  Desserts 
+##                         2                         2 
+##                Gastropubs                    Korean 
+##                         2                         2 
+##                      Pubs                     Salad 
+##                         2                         2 
+##                 Soul Food                  Southern 
+##                         2                         2 
+##                Tapas Bars        Tapas/Small Plates 
+##                         2                         2 
+##                 Wine Bars                      Beer 
+##                         2                         1 
+##                 Brazilian                   British 
+##                         1                         1 
+##                     Cafes              Cajun/Creole 
+##                         1                         1 
+##             Cocktail Bars                     Delis 
+##                         1                         1 
+## Event Planning &amp; Services                    German 
+##                         1                         1 
+##            Latin American                     Ramen 
+##                         1                         1 
+##                   Spanish                  Szechuan 
+##                         1                         1 
+##                      Thai                Vegetarian 
+##                         1                         1 
+##     Venues &amp; Event Spaces                Vietnamese 
+##                         1                         1 
+##            Wine &amp; Spirits 
+##                         1</code></pre>
+<p>Bars, Nightlife, American</p>
 <p>Comparing the two sets, which restaurants are in the Top 50 for both groups?</p>
-<pre class="r"><code>intersect(n.eth.summaries[1], n.non.eth.summaries[1])</code></pre>
-<pre><code>## Source: local data frame [32 x 1]
+<pre class="r"><code>asians[[3]] %&gt;% select(name, num.reviews)</code></pre>
+<pre><code>## Source: local data frame [55 x 2]
 ## 
-##                       name
-##                      (chr)
-## 1             Mon Ami Gabi
-## 2             Wicked Spoon
-## 3         Earl of Sandwich
-## 4         Bacchanal Buffet
-## 5      Gordon Ramsay BurGR
-## 6            Serendipity 3
-## 7               The Buffet
-## 8       Hash House A Go Go
-## 9  Bouchon at The Venetian
-## 10  The Buffet at Bellagio
-## ..                     ...</code></pre>
-<p>26/50 are shared between the sets. This is more different than the comparison we made with Latinos above.</p>
+##                       name num.reviews
+##                      (chr)       (int)
+## 1             Mon Ami Gabi         101
+## 2             Wicked Spoon         121
+## 3         Earl of Sandwich         104
+## 4         Bacchanal Buffet         118
+## 5      Gordon Ramsay BurGR          67
+## 6            Serendipity 3          57
+## 7               The Buffet          89
+## 8       Hash House A Go Go          36
+## 9  Bouchon at The Venetian          52
+## 10  The Buffet at Bellagio          75
+## ..                     ...         ...</code></pre>
+<p>55% are shared amongst the two groups. This is different than what we saw with the Latino vs. non-Latino comparisons above.</p>
+<p>Category counts:</p>
+<pre class="r"><code>sort(values(MakeCategoriesDict(asians[[3]]$categories)), decreasing = TRUE)</code></pre>
+<pre><code>##                      Bars                   Buffets 
+##                         9                         9 
+##                 Nightlife            American (New) 
+##                         9                         8 
+##    American (Traditional)        Breakfast &amp; Brunch 
+##                         8                         8 
+##               Steakhouses                  Japanese 
+##                         7                         6 
+##                   Burgers                   Lounges 
+##                         4                         4 
+##              Asian Fusion                      Food 
+##                         3                         3 
+##                    French                   Mexican 
+##                         3                         3 
+##                Sushi Bars                   Chinese 
+##                         3                         2 
+##                  Desserts                    Korean 
+##                         2                         2 
+##                Sandwiches                   Seafood 
+##                         2                         2 
+##                Tapas Bars      Arts &amp; Entertainment 
+##                         2                         1 
+##                  Barbeque                 Breweries 
+##                         1                         1 
+##              Cajun/Creole                   Casinos 
+##                         1                         1 
+##                     Delis Event Planning &amp; Services 
+##                         1                         1 
+##                   Italian             Mediterranean 
+##                         1                         1 
+##                     Pizza                     Ramen 
+##                         1                         1 
+##                  Southern                   Spanish 
+##                         1                         1 
+##        Tapas/Small Plates                      Thai 
+##                         1                         1 
+##     Venues &amp; Event Spaces                Vietnamese 
+##                         1                         1</code></pre>
+<p>Bars, Buffets, Nightlife</p>
 <p>Restaurants that are popular among Asians but not among non-Asians:</p>
-<pre class="r"><code>setdiff(n.eth.summaries[1], n.non.eth.summaries[1])</code></pre>
-<pre><code>## Source: local data frame [17 x 1]
+<pre class="r"><code>asians[[4]] %&gt;% select(name, num.reviews)</code></pre>
+<pre><code>## Source: local data frame [45 x 2]
 ## 
-##                                name
-##                               (chr)
-## 1                            Ichiza
-## 2              Gen Korean BBQ House
-## 3                          Pho So 1
-## 4                              Raku
-## 5                        Schwartz's
-## 6                             Yu-Yu
-## 7                        Ramen Sora
-## 8           Soyo Korean Barstaurant
-## 9         Cravings Buffet at Mirage
-## 10           Village Seafood Buffet
-## 11                       Sushi Roku
-## 12                    Yunnan Garden
-## 13                   Tacos El Gordo
-## 14 LAVO Italian Restaurant &amp; Lounge
-## 15                     KoMex Fusion
-## 16       District One Kitchen &amp; Bar
-## 17                    Baguette Cafe</code></pre>
+##                                 name num.reviews
+##                                (chr)       (int)
+## 1                            Noodles          17
+## 2                         Lemongrass          17
+## 3                       Pho Saigon 8          17
+## 4                        Umiya Sushi          17
+## 5  Orchids Garden Chinese Restaurant          17
+## 6                        Noodle Asia          18
+## 7                            Kinh Do          18
+## 8                       India Palace          18
+## 9                 Mint Indian Bistro          18
+## 10                         Roka Akor          18
+## ..                               ...         ...</code></pre>
+<p>Category counts:</p>
+<pre class="r"><code>sort(values(MakeCategoriesDict(asians[[4]]$categories)), decreasing = TRUE)</code></pre>
+<pre><code>##               Japanese                Chinese             Sushi Bars 
+##                     11                     10                      6 
+##           Asian Fusion                 Korean                Seafood 
+##                      5                      5                      5 
+##                Buffets               Barbeque                   Bars 
+##                      4                      3                      3 
+##           Coffee &amp; Tea                Dim Sum                   Food 
+##                      3                      3                      3 
+##                 Indian              Nightlife             Vietnamese 
+##                      3                      3                      3 
+##                 French               Szechuan                   Thai 
+##                      2                      2                      2 
+##         American (New) American (Traditional)     Breakfast &amp; Brunch 
+##                      1                      1                      1 
+##                  Cafes           Cajun/Creole         Canadian (New) 
+##                      1                      1                      1 
+##              Cantonese               Desserts                Italian 
+##                      1                      1                      1 
+##                Lounges            Poutineries                  Ramen 
+##                      1                      1                      1 
+##             Sandwiches              Taiwanese             Vegetarian 
+##                      1                      1                      1</code></pre>
+<p>Asian food</p>
 <p>Vice-versa:</p>
-<pre class="r"><code>setdiff(n.non.eth.summaries[1], n.eth.summaries[1])</code></pre>
-<pre><code>## Source: local data frame [17 x 1]
+<pre class="r"><code>asians[[5]] %&gt;% select(name, num.reviews)</code></pre>
+<pre><code>## Source: local data frame [45 x 2]
 ## 
-##                                           name
-##                                          (chr)
-## 1  The Peppermill Restaurant &amp; Fireside Lounge
-## 2                              Pizzeria Bianco
-## 3                        Four Peaks Brewing Co
-## 4                Ellis Island Casino &amp; Brewery
-## 5                         SUSHISAMBA Las Vegas
-## 6                        Rollin Smoke Barbeque
-## 7                                    Guy Fieri
-## 8                                        Giada
-## 9                                         Cibo
-## 10                                  Yama Sushi
-## 11      Joe's Seafood Prime Steak &amp; Stone Crab
-## 12                                 Lux Central
-## 13                                     Bobby Q
-## 14                                      Olives
-## 15                                        eat.
-## 16                           El Dorado Cantina
-## 17                       Cornish Pasty Company</code></pre>
-<p>It seems like common American chain restaurants are in this list, e.g. Subway, Denny’s, Chipotle, P.F. Chang’s.</p>
+##                      name num.reviews
+##                     (chr)       (int)
+## 1    Matt's Big Breakfast         822
+## 2     Mastro's Ocean Club         825
+## 3  Amélie's French Bakery         828
+## 4    The Arrogant Butcher         829
+## 5           STK Las Vegas         837
+## 6                     MIX         839
+## 7       Chelsea's Kitchen         843
+## 8  Yard House Town Square         847
+## 9            Gallo Blanco         848
+## 10         Liberty Market         854
+## ..                    ...         ...</code></pre>
+<p>Category counts:</p>
+<pre class="r"><code>sort(values(MakeCategoriesDict(asians[[5]]$categories)), decreasing = TRUE)</code></pre>
+<pre><code>##                   Bars              Nightlife         American (New) 
+##                     16                     16                     13 
+## American (Traditional)     Breakfast &amp; Brunch            Steakhouses 
+##                      7                      7                      7 
+##                Burgers                   Food                Italian 
+##                      5                      5                      5 
+##                Mexican                  Pizza             Sandwiches 
+##                      5                      4                      4 
+##                Lounges           Asian Fusion               Bakeries 
+##                      3                      2                      2 
+##               Barbeque           Coffee &amp; Tea             Gastropubs 
+##                      2                      2                      2 
+##          Mediterranean                   Pubs                  Salad 
+##                      2                      2                      2 
+##                Seafood              Soul Food              Wine Bars 
+##                      2                      2                      2 
+##   Arts &amp; Entertainment                   Beer              Brazilian 
+##                      1                      1                      1 
+##              Breweries                British                  Cafes 
+##                      1                      1                      1 
+##                Casinos                Chinese          Cocktail Bars 
+##                      1                      1                      1 
+##                 French                 German         Latin American 
+##                      1                      1                      1 
+##               Southern             Sushi Bars               Szechuan 
+##                      1                      1                      1 
+##     Tapas/Small Plates             Vegetarian         Wine &amp; Spirits 
+##                      1                      1                      1</code></pre>
+<p>Non-Asian food. It is interesting that there is more disparity between Asians and non-Asians than Latinos and non-Latinos.</p>
 </div>
 </div>
 
